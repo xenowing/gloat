@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use std::ffi::{CStr, c_void};
 use std::slice;
 
@@ -29,50 +31,122 @@ type GLbitfield = u32;
 type GLdouble = f64;
 type GLvoid = c_void;
 
+const GL_NO_ERROR: GLenum = 0;
+
+const GL_UNPACK_SWAP_BYTES: GLenum = 0x0cf0;
+const GL_UNPACK_LSB_FIRST: GLenum = 0x0cf1;
+const GL_UNPACK_ROW_LENGTH: GLenum = 0x0cf2;
+const GL_UNPACK_SKIP_ROWS: GLenum = 0x0cf3;
+const GL_UNPACK_SKIP_PIXELS: GLenum = 0x0cf4;
+const GL_UNPACK_ALIGNMENT: GLenum = 0x0cf5;
+const GL_PACK_SWAP_BYTES: GLenum = 0x0d00;
+const GL_PACK_LSB_FIRST: GLenum = 0x0d01;
+const GL_PACK_ROW_LENGTH: GLenum = 0x0d02;
+const GL_PACK_SKIP_ROWS: GLenum = 0x0d03;
+const GL_PACK_SKIP_PIXELS: GLenum = 0x0d04;
+const GL_PACK_ALIGNMENT: GLenum = 0x0d05;
+
+const GL_MAX_TEXTURE_SIZE: GLenum = 0xd33;
+
 const GL_TEXTURE_2D: GLenum = 0x0de1;
 
 const GL_MODELVIEW: GLenum = 0x1700;
 const GL_PROJECTION: GLenum = 0x1701;
+
+const GL_LINEAR: GLint = 0x2601;
+const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
+
+const GL_TEXTURE_MAG_FILTER: GLenum = 0x2800;
+const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
 
 enum MatrixMode {
     ModelView,
     Projection,
 }
 
+enum TextureFilter {
+    Linear,
+    LinearMipmapNearest,
+}
+
 struct Texture {
-    // TODO
+    mag_filter: TextureFilter,
+    min_filter: TextureFilter,
 }
 
 impl Texture {
     fn new() -> Texture {
         Texture {
-            // TODO
+            mag_filter: TextureFilter::Linear,
+            min_filter: TextureFilter::Linear,
         }
     }
 }
 
 enum Command {
     BindTexture { target: GLenum, texture: GLuint },
+    Clear { mask: GLbitfield },
+    ClearColor { red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat },
+    Disable { cap: GLenum },
     LoadIdentity,
     MatrixMode { mode: GLenum },
     MultMatrixd { _m: [GLdouble; 16] },
+    Ortho { left: GLdouble, right: GLdouble, bottom: GLdouble, top: GLdouble, zNear: GLdouble, zFar: GLdouble },
+    PushMatrix,
+    TexParameteri { target: GLenum, pname: GLenum, param: GLint },
     Viewport { x: GLint, y: GLint, width: GLsizei, height: GLsizei },
 }
 
 struct Context {
+    clear_color_red: GLfloat,
+    clear_color_green: GLfloat,
+    clear_color_blue: GLfloat,
+    clear_color_alpha: GLfloat,
+
     matrix_mode: MatrixMode,
 
     textures: Vec<Texture>,
     texture_2d: GLuint,
+
+    unpack_swap_bytes: GLint,
+    unpack_lsb_first: GLint,
+    unpack_row_length: GLint,
+    unpack_skip_rows: GLint,
+    unpack_skip_pixels: GLint,
+    unpack_alignment: GLint,
+    pack_swap_bytes: GLint,
+    pack_lsb_first: GLint,
+    pack_row_length: GLint,
+    pack_skip_rows: GLint,
+    pack_skip_pixels: GLint,
+    pack_alignment: GLint,
 }
 
 impl Context {
     fn new() -> Context {
         Context {
+            clear_color_red: 0.0,
+            clear_color_green: 0.0,
+            clear_color_blue: 0.0,
+            clear_color_alpha: 0.0,
+
             matrix_mode: MatrixMode::ModelView,
 
             textures: Vec::new(),
             texture_2d: 0,
+
+            unpack_swap_bytes: 0,
+            unpack_lsb_first: 0,
+            unpack_row_length: 0,
+            unpack_skip_rows: 0,
+            unpack_skip_pixels: 0,
+            unpack_alignment: 4,
+            pack_swap_bytes: 0,
+            pack_lsb_first: 0,
+            pack_row_length: 0,
+            pack_skip_rows: 0,
+            pack_skip_pixels: 0,
+            pack_alignment: 4,
         }
     }
 
@@ -80,6 +154,51 @@ impl Context {
         for i in 0..n {
             *textures.add(i as _) = self.textures.len() as _;
             self.textures.push(Texture::new());
+        }
+    }
+
+    fn get_integerv(&self, pname: GLenum, params: *mut GLint) {
+        match pname {
+            GL_UNPACK_SWAP_BYTES => unsafe {
+                *params = self.unpack_swap_bytes;
+            }
+            GL_UNPACK_LSB_FIRST => unsafe {
+                *params = self.unpack_lsb_first;
+            }
+            GL_UNPACK_ROW_LENGTH => unsafe {
+                *params = self.unpack_row_length;
+            }
+            GL_UNPACK_SKIP_ROWS => unsafe {
+                *params = self.unpack_skip_rows;
+            }
+            GL_UNPACK_SKIP_PIXELS => unsafe {
+                *params = self.unpack_skip_pixels;
+            }
+            GL_UNPACK_ALIGNMENT => unsafe {
+                *params = self.unpack_alignment;
+            }
+            GL_PACK_SWAP_BYTES => unsafe {
+                *params = self.pack_swap_bytes;
+            }
+            GL_PACK_LSB_FIRST => unsafe {
+                *params = self.pack_lsb_first;
+            }
+            GL_PACK_ROW_LENGTH => unsafe {
+                *params = self.pack_row_length;
+            }
+            GL_PACK_SKIP_ROWS => unsafe {
+                *params = self.pack_skip_rows;
+            }
+            GL_PACK_SKIP_PIXELS => unsafe {
+                *params = self.pack_skip_pixels;
+            }
+            GL_PACK_ALIGNMENT => unsafe {
+                *params = self.pack_alignment;
+            }
+            GL_MAX_TEXTURE_SIZE => unsafe {
+                *params = 4096; // TODO: Is this big enough? :)
+            }
+            _ => panic!("glGetIntegerv called with invalid pname: 0x{:08x}", pname)
         }
     }
 
@@ -95,8 +214,23 @@ impl Context {
                     _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
                 }
             }
+            Command::Clear { mask } => {
+                // TODO
+                println!("Clear: mask: 0x{:08x}", mask);
+            }
+            Command::ClearColor { red, green, blue, alpha } => {
+                self.clear_color_red = red;
+                self.clear_color_green = green;
+                self.clear_color_blue = blue;
+                self.clear_color_alpha = alpha;
+            }
+            Command::Disable { cap } => {
+                // TODO
+                println!("Disable: cap: 0x{:08x}", cap);
+            }
             Command::LoadIdentity => {
                 // TODO
+                println!("LoadIdentity")
             }
             Command::MatrixMode { mode } => {
                 self.matrix_mode = match mode {
@@ -107,11 +241,86 @@ impl Context {
             }
             Command::MultMatrixd { _m } => {
                 // TODO
+                println!("MultMatrixd");
+            }
+            Command::Ortho { left, right, bottom, top, zNear, zFar } => {
+                // TODO
+                println!("Ortho: left: {}, right: {}, bottom: {}, top: {}, zNear: {}, zFar: {}", left, right, bottom, top, zNear, zFar);
+            }
+            Command::PushMatrix => {
+                // TODO
+                println!("PushMatrix");
+            }
+            Command::TexParameteri { target, pname, param } => {
+                match target {
+                    GL_TEXTURE_2D => {
+                        let texture = &mut self.textures[self.texture_2d as usize];
+                        match pname {
+                            // TODO: De-dupe filter param decoding
+                            GL_TEXTURE_MAG_FILTER => match param {
+                                GL_LINEAR => {
+                                    texture.mag_filter = TextureFilter::Linear;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MAG_FILTER: 0x{:08x}", param)
+                            }
+                            GL_TEXTURE_MIN_FILTER => match param {
+                                GL_LINEAR => {
+                                    texture.min_filter = TextureFilter::Linear;
+                                }
+                                GL_LINEAR_MIPMAP_NEAREST => {
+                                    texture.min_filter = TextureFilter::LinearMipmapNearest;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MIN_FILTER: 0x{:08x}", param)
+                            }
+                            _ => panic!("glTexParameteri called with invalid pname: 0x{:08x}", pname)
+                        }
+                    }
+                    _ => panic!("glTexParameteri called with invalid target: 0x{:08x}", target)
+                }
             }
             Command::Viewport { x, y, width, height } => {
                 // TODO
-                println!("viewport: {}, {}, {}, {}", x, y, width, height);
+                println!("Viewport: {}, {}, {}, {}", x, y, width, height);
             }
+        }
+    }
+
+    fn pixel_storei(&mut self, pname: GLenum, param: GLint) {
+        match pname {
+            GL_UNPACK_SWAP_BYTES => match param {
+                0 | 1 => {
+                    self.unpack_swap_bytes = param;
+                }
+                _ => panic!("glPixelStorei called with invalid param for GL_UNPACK_SWAP_BYTES: 0x{:08x}", param)
+            }
+            GL_UNPACK_ROW_LENGTH => {
+                if param >= 0 {
+                    self.unpack_row_length = param;
+                } else {
+                    panic!("glPixelStorei called with invalid param for GL_UNPACK_ROW_LENGTH: 0x{:08x}", param);
+                }
+            }
+            GL_UNPACK_SKIP_ROWS => {
+                if param >= 0 {
+                    self.unpack_skip_rows = param;
+                } else {
+                    panic!("glPixelStorei called with invalid param for GL_UNPACK_SKIP_ROWS: 0x{:08x}", param);
+                }
+            }
+            GL_UNPACK_SKIP_PIXELS => {
+                if param >= 0 {
+                    self.unpack_skip_pixels = param;
+                } else {
+                    panic!("glPixelStorei called with invalid param for GL_UNPACK_SKIP_PIXELS: 0x{:08x}", param);
+                }
+            }
+            GL_UNPACK_ALIGNMENT => match param {
+                1 | 2 | 4 | 8 => {
+                    self.unpack_alignment = param;
+                }
+                _ => panic!("glPixelStorei called with invalid param for GL_UNPACK_ALIGNMENT: 0x{:08x}", param)
+            }
+            _ => panic!("glPixelStorei called with invalid pname: 0x{:08x}", pname)
         }
     }
 }
@@ -128,7 +337,6 @@ const DLL_THREAD_ATTACH: DWORD = 2;
 const DLL_THREAD_DETACH: DWORD = 3;
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub unsafe extern "system" fn DllMain(_hinstDLL: HINSTANCE, fdwReason: DWORD, _lpvReserved: LPVOID) -> BOOL {
     match fdwReason {
         DLL_PROCESS_ATTACH => {
@@ -152,247 +360,207 @@ pub unsafe extern "system" fn DllMain(_hinstDLL: HINSTANCE, fdwReason: DWORD, _l
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glActiveTextureARB(_texture: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glArrayElement(_index: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glBegin(_mode: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
     context().issue(Command::BindTexture { target, texture });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glBlendFunc(_sfactor: GLenum, _dfactor: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glCallList(_list: GLuint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glClear(_mask: GLbitfield) {
-    unimplemented!()
+pub extern "stdcall" fn glClear(mask: GLbitfield) {
+    context().issue(Command::Clear { mask });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glClearColor(_red: GLfloat, _green: GLfloat, _blue: GLfloat, _alpha: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glClearColor(red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat) {
+    context().issue(Command::ClearColor { red, green, blue, alpha });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glClearDepth(_depth: GLdouble) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glClientActiveTextureARB(_texture: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glColor3f(_red: GLfloat, _green: GLfloat, _blue: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glColor4f(_red: GLfloat, _green: GLfloat, _blue: GLfloat, _alpha: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glCullFace(_mode: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glDepthFunc(_func: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glDepthMask(_flag: GLboolean) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glDisable(_cap: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glDisable(cap: GLenum) {
+    context().issue(Command::Disable { cap });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glDisableClientState(_array: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEnable(_cap: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEnableClientState(_array: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEnd() {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEndList() {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEvalCoord1f(_u: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEvalCoord2f(_u: GLfloat, _v: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEvalMesh1(_mode: GLenum, _i1: GLint, _i2: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEvalMesh2(_mode: GLenum, _i1: GLint, _i2: GLint, _j1: GLint, _j2: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glEvalPoint2(_i: GLint, _j: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glGenLists(_range: GLsizei) -> GLuint {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glGenTextures(n: GLsizei, textures: *mut GLuint) {
     context().gen_textures(n, textures);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glGetError() -> GLenum {
-    unimplemented!()
+    // Since we always just panic on error, we'll never have anything to report
+    GL_NO_ERROR
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glGetFloatv(_pname: GLenum, _params: *mut GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glGetIntegerv(_pname: GLenum, _params: *mut GLint) {
-    unimplemented!()
+pub extern "stdcall" fn glGetIntegerv(pname: GLenum, params: *mut GLint) {
+    context().get_integerv(pname, params);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glGetString(_name: GLenum) -> *const GLubyte {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glLightf(_light: GLenum, _pname: GLenum, _param: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glLightfv(_light: GLenum, _pname: GLenum, _params: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glLoadIdentity() {
     context().issue(Command::LoadIdentity);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMap1f(_target: GLenum, _u1: GLfloat, _u2: GLfloat, _stride: GLint, _order: GLint, _points: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMap2f(_target: GLenum, _u1: GLfloat, _u2: GLfloat, _ustride: GLint, _uorder: GLint, _v1: GLfloat, _v2: GLfloat, _vstride: GLint, _vorder: GLint, _points: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMapGrid1f(_un: GLint, _u1: GLfloat, _u2: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMapGrid2d(_un: GLint, _u1: GLdouble, _u2: GLdouble, _vn: GLint, _v1: GLdouble, _v2: GLdouble) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMaterialfv(_face: GLenum, _pname: GLenum, _params: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMatrixMode(mode: GLenum) {
     context().issue(Command::MatrixMode { mode });
 }
@@ -558,7 +726,6 @@ extern "stdcall" fn glMultiTexCoord4svARB(_target: GLenum, _v: *const GLshort) {
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
     let mut m_copy = [0.0; 16];
     m_copy.copy_from_slice(unsafe { slice::from_raw_parts(m, 16) });
@@ -566,169 +733,142 @@ pub extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glMultMatrixf(_m: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glNewList(_list: GLuint, _mode: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glNormal3f(_nx: GLfloat, _ny: GLfloat, _nz: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glNormal3fv(_v: *const GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glNormalPointer(_type: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glOrtho(_left: GLdouble, _right: GLdouble, _bottom: GLdouble, _top: GLdouble, _zNear: GLdouble, _zFar: GLdouble) {
-    unimplemented!()
+pub extern "stdcall" fn glOrtho(left: GLdouble, right: GLdouble, bottom: GLdouble, top: GLdouble, zNear: GLdouble, zFar: GLdouble) {
+    context().issue(Command::Ortho { left, right, bottom, top, zNear, zFar });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glPixelStorei(_pname: GLenum, _param: GLint) {
-    unimplemented!()
+pub extern "stdcall" fn glPixelStorei(pname: GLenum, param: GLint) {
+    context().pixel_storei(pname, param);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glPolygonMode(_face: GLenum, _mode: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glPopAttrib() {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glPopMatrix() {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glPushAttrib(_mask: GLbitfield) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glPushMatrix() {
-    unimplemented!()
+    context().issue(Command::PushMatrix);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glScalef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glShadeModel(_mode: GLenum) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTexCoord2f(_s: GLfloat, _t: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTexGenf(_coord: GLenum, _pname: GLenum, _param: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTexGeni(_coord: GLenum, _pname: GLenum, _param: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glTexParameteri(_target: GLenum, _pname: GLenum, _param: GLint) {
-    unimplemented!()
+pub extern "stdcall" fn glTexParameteri(target: GLenum, pname: GLenum, param: GLint) {
+    context().issue(Command::TexParameteri { target, pname, param });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTexImage1D(_target: GLenum, _level: GLint, _internalformat: GLint, _width: GLsizei, _border: GLint, _format: GLenum, _type: GLenum, _data: *const GLvoid) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
-pub extern "stdcall" fn glTexImage2D(_target: GLenum, _level: GLint, _internalformat: GLint, _width: GLsizei, _height: GLsizei, _border: GLint, _format: GLenum, _type: GLenum, _data: *const GLvoid) {
-    unimplemented!()
+pub extern "stdcall" fn glTexImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type_: GLenum, data: *const GLvoid) {
+    // TODO!
+    println!("TexImage2D: target: 0x{:08x}, level: 0x{:08x}, internalformat: 0x{:08x}, width: 0x{:08x}, height: 0x{:08x}, border: 0x{:08x}, format: 0x{:08x}, type: 0x{:08x}, data: 0x{:08x}", target, level, internalformat, width, height, border, format, type_, data as u32);
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTranslated(_x: GLdouble, _y: GLdouble, _z: GLdouble) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glTranslatef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glVertex3f(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glVertexPointer(_size: GLint, _type: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei) {
     context().issue(Command::Viewport { x, y, width, height });
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn wglCreateContext(_dc: HDC) -> HGLRC {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn wglDeleteContext(_rc: HGLRC) -> BOOL {
     unimplemented!()
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn wglGetProcAddress(name: LPCSTR) -> PROC {
     match CStr::from_ptr(name as *const i8).to_string_lossy().as_ref() {
         "glMultiTexCoord1dEXT" => glMultiTexCoord1dEXT as _,
@@ -774,7 +914,6 @@ pub unsafe extern "stdcall" fn wglGetProcAddress(name: LPCSTR) -> PROC {
 }
 
 #[no_mangle]
-#[allow(non_snake_case)]
 pub extern "stdcall" fn wglMakeCurrent(_dc: HDC, _rc: HGLRC) -> BOOL {
     println!("wglMakeCurrent called, ignoring");
     TRUE
