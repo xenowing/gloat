@@ -1,4 +1,5 @@
 use std::ffi::{CStr, c_void};
+use std::slice;
 
 type LPVOID = *mut c_void;
 
@@ -50,6 +51,14 @@ impl Texture {
     }
 }
 
+enum Command {
+    BindTexture { target: GLenum, texture: GLuint },
+    LoadIdentity,
+    MatrixMode { mode: GLenum },
+    MultMatrixd { _m: [GLdouble; 16] },
+    Viewport { x: GLint, y: GLint, width: GLsizei, height: GLsizei },
+}
+
 struct Context {
     matrix_mode: MatrixMode,
 
@@ -67,15 +76,6 @@ impl Context {
         }
     }
 
-    fn bind_texture(&mut self, target: GLenum, texture: GLuint) {
-        match target {
-            GL_TEXTURE_2D => {
-                self.texture_2d = texture;
-            }
-            _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
-        }
-    }
-
     unsafe fn gen_textures(&mut self, n: GLsizei, textures: *mut GLuint) {
         for i in 0..n {
             *textures.add(i as _) = self.textures.len() as _;
@@ -83,22 +83,36 @@ impl Context {
         }
     }
 
-    fn load_identity(&mut self) {
-        // TODO
-    }
-
-    fn matrix_mode(&mut self, mode: MatrixMode) {
-        self.matrix_mode = mode;
-    }
-
-    fn mult_matrix_d(&mut self, _m: *const GLdouble) {
-        // TODO
-    }
-
-    fn viewport(&mut self, x: GLint, y: GLint, width: GLsizei, height: GLsizei)
-    {
-        // TODO
-        println!("viewport: {}, {}, {}, {}", x, y, width, height);
+    fn issue(&mut self, command: Command) {
+        // TODO: Store command in current display list, if any
+        // TODO: Don't execute command if a display list is active and the list mode isn't GL_COMPILE_AND_EXECUTE
+        match command {
+            Command::BindTexture { target, texture } => {
+                match target {
+                    GL_TEXTURE_2D => {
+                        self.texture_2d = texture;
+                    }
+                    _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
+                }
+            }
+            Command::LoadIdentity => {
+                // TODO
+            }
+            Command::MatrixMode { mode } => {
+                self.matrix_mode = match mode {
+                    GL_MODELVIEW => MatrixMode::ModelView,
+                    GL_PROJECTION => MatrixMode::Projection,
+                    _ => panic!("glMatrixMode called with invalid mode: 0x{:08x}", mode),
+                };
+            }
+            Command::MultMatrixd { _m } => {
+                // TODO
+            }
+            Command::Viewport { x, y, width, height } => {
+                // TODO
+                println!("viewport: {}, {}, {}, {}", x, y, width, height);
+            }
+        }
     }
 }
 
@@ -155,7 +169,7 @@ pub extern "stdcall" fn glBegin(_mode: GLenum) {
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
     let context = CONTEXT.as_mut().unwrap();
-    context.bind_texture(target, texture);
+    context.issue(Command::BindTexture { target, texture });
 }
 
 #[no_mangle]
@@ -343,7 +357,7 @@ pub extern "stdcall" fn glLightfv(_light: GLenum, _pname: GLenum, _params: *cons
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glLoadIdentity() {
     let context = CONTEXT.as_mut().unwrap();
-    context.load_identity();
+    context.issue(Command::LoadIdentity);
 }
 
 #[no_mangle]
@@ -380,12 +394,7 @@ pub extern "stdcall" fn glMaterialfv(_face: GLenum, _pname: GLenum, _params: *co
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glMatrixMode(mode: GLenum) {
     let context = CONTEXT.as_mut().unwrap();
-    let mode = match mode {
-        GL_MODELVIEW => MatrixMode::ModelView,
-        GL_PROJECTION => MatrixMode::Projection,
-        _ => panic!("glMatrixMode called with invalid mode: 0x{:08x}", mode),
-    };
-    context.matrix_mode(mode);
+    context.issue(Command::MatrixMode { mode });
 }
 
 #[allow(non_snake_case)]
@@ -552,7 +561,9 @@ extern "stdcall" fn glMultiTexCoord4svARB(_target: GLenum, _v: *const GLshort) {
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
     let context = CONTEXT.as_mut().unwrap();
-    context.mult_matrix_d(m);
+    let mut copy = [0.0; 16];
+    copy.copy_from_slice(slice::from_raw_parts(m, 16));
+    context.issue(Command::MultMatrixd { _m: copy });
 }
 
 #[no_mangle]
@@ -703,7 +714,7 @@ pub extern "stdcall" fn glVertexPointer(_size: GLint, _type: GLenum, _stride: GL
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei) {
     let context = CONTEXT.as_mut().unwrap();
-    context.viewport(x, y, width, height);
+    context.issue(Command::Viewport { x, y, width, height });
 }
 
 #[no_mangle]
