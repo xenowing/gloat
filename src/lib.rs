@@ -209,8 +209,8 @@ impl Context {
         self.new_list = None;
     }
 
-    fn execute(&mut self, command: Command) {
-        match command {
+    fn execute(&mut self, command: &Command) {
+        match *command {
             Command::ActiveTextureARB { texture } => {
                 // TODO
                 println!("ActiveTextureARB: texture: 0x{:08x}", texture);
@@ -236,8 +236,10 @@ impl Context {
                 println!("BlendFunc: sfactor: 0x{:08x}, dfactor: 0x{:08x}", sfactor, dfactor);
             }
             Command::CallList { list } => {
-                // TODO: This should be trivial, but we may need to worry about commands from this list polluting a currently bound list; double-check the docs
-                println!("CallList: list: 0x{:08x}", list)
+                // TODO: This clone is potentially very expensive, but there's no other way to get Rust to accept &mut self here.
+                for command in self.display_lists[list as usize].commands.clone().into_iter() {
+                    self.execute(&command);
+                }
             }
             Command::Clear { mask } => {
                 // TODO
@@ -437,11 +439,11 @@ impl Context {
     fn issue(&mut self, command: Command) {
         if let Some(list) = self.new_list {
             if self.new_list_mode == GL_COMPILE_AND_EXECUTE {
-                self.execute(command.clone());
+                self.execute(&command);
             }
             self.display_lists[list as usize].commands.push(command);
         } else {
-            self.execute(command);
+            self.execute(&command);
         }
     }
 
