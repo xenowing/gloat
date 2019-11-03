@@ -50,6 +50,9 @@ const GL_MAX_TEXTURE_SIZE: GLenum = 0xd33;
 
 const GL_TEXTURE_2D: GLenum = 0x0de1;
 
+const GL_COMPILE: GLenum = 0x1300;
+const GL_COMPILE_AND_EXECUTE: GLenum = 0x1301;
+
 const GL_MODELVIEW: GLenum = 0x1700;
 const GL_PROJECTION: GLenum = 0x1701;
 
@@ -58,6 +61,18 @@ const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
 
 const GL_TEXTURE_MAG_FILTER: GLenum = 0x2800;
 const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
+
+struct DisplayList {
+    commands: Vec<Command>,
+}
+
+impl DisplayList {
+    fn new() -> DisplayList {
+        DisplayList {
+            commands: Vec::new(),
+        }
+    }
+}
 
 enum MatrixMode {
     ModelView,
@@ -83,17 +98,39 @@ impl Texture {
     }
 }
 
+#[derive(Clone)]
 enum Command {
+    ActiveTextureARB { texture: GLenum },
+    ArrayElement { index: GLint },
+    Begin { mode: GLenum },
     BindTexture { target: GLenum, texture: GLuint },
+    BlendFunc { sfactor: GLenum, dfactor: GLenum },
+    CallList { list: GLuint },
     Clear { mask: GLbitfield },
     ClearColor { red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat },
+    Color4f { red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat },
+    CullFace { mode: GLenum },
+    DepthMask { flag: GLboolean },
     Disable { cap: GLenum },
+    Enable { cap: GLenum },
+    End,
+    Lightf { light: GLenum, pname: GLenum, param: GLfloat },
     LoadIdentity,
     MatrixMode { mode: GLenum },
+    MultiTexCoord2fARB { target: GLenum, s: GLfloat, t: GLfloat },
     MultMatrixd { _m: [GLdouble; 16] },
+    MultMatrixf { _m: [GLfloat; 16] },
+    Normal3fv { v: [GLfloat; 3] },
     Ortho { left: GLdouble, right: GLdouble, bottom: GLdouble, top: GLdouble, zNear: GLdouble, zFar: GLdouble },
+    PolygonMode { face: GLenum, mode: GLenum },
+    PopMatrix,
     PushMatrix,
+    ShadeModel { mode: GLenum },
+    TexCoord2f { s: GLfloat, t: GLfloat },
+    TexGenf { coord: GLenum, pname: GLenum, param: GLfloat },
     TexParameteri { target: GLenum, pname: GLenum, param: GLint },
+    Translated { x: GLdouble, y: GLdouble, z: GLdouble },
+    Vertex3f { x: GLfloat, y: GLfloat, z: GLfloat },
     Viewport { x: GLint, y: GLint, width: GLsizei, height: GLsizei },
 }
 
@@ -102,6 +139,10 @@ struct Context {
     clear_color_green: GLfloat,
     clear_color_blue: GLfloat,
     clear_color_alpha: GLfloat,
+
+    display_lists: Vec<DisplayList>,
+    new_list: Option<GLuint>,
+    new_list_mode: GLenum,
 
     matrix_mode: MatrixMode,
 
@@ -130,6 +171,10 @@ impl Context {
             clear_color_blue: 0.0,
             clear_color_alpha: 0.0,
 
+            display_lists: Vec::new(),
+            new_list: None,
+            new_list_mode: 0,
+
             matrix_mode: MatrixMode::ModelView,
 
             textures: Vec::new(),
@@ -148,6 +193,193 @@ impl Context {
             pack_skip_pixels: 0,
             pack_alignment: 4,
         }
+    }
+
+    fn disable_client_state(&mut self, array: GLenum) {
+        // TODO
+        println!("DisableClientState: array: 0x{:08x}", array);
+    }
+
+    fn enable_client_state(&mut self, array: GLenum) {
+        // TODO
+        println!("EnableClientState: array: 0x{:08x}", array);
+    }
+
+    fn end_list(&mut self) {
+        self.new_list = None;
+    }
+
+    fn execute(&mut self, command: Command) {
+        match command {
+            Command::ActiveTextureARB { texture } => {
+                // TODO
+                println!("ActiveTextureARB: texture: 0x{:08x}", texture);
+            }
+            Command::ArrayElement { index } => {
+                // TODO
+                println!("ArrayElement: index: 0x{:08x}", index);
+            }
+            Command::Begin { mode } => {
+                // TODO
+                println!("Begin: mode: 0x{:08x}", mode);
+            }
+            Command::BindTexture { target, texture } => {
+                match target {
+                    GL_TEXTURE_2D => {
+                        self.texture_2d = texture;
+                    }
+                    _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
+                }
+            }
+            Command::BlendFunc { sfactor, dfactor } => {
+                // TODO
+                println!("BlendFunc: sfactor: 0x{:08x}, dfactor: 0x{:08x}", sfactor, dfactor);
+            }
+            Command::CallList { list } => {
+                // TODO: This should be trivial, but we may need to worry about commands from this list polluting a currently bound list; double-check the docs
+                println!("CallList: list: 0x{:08x}", list)
+            }
+            Command::Clear { mask } => {
+                // TODO
+                println!("Clear: mask: 0x{:08x}", mask);
+            }
+            Command::ClearColor { red, green, blue, alpha } => {
+                self.clear_color_red = red;
+                self.clear_color_green = green;
+                self.clear_color_blue = blue;
+                self.clear_color_alpha = alpha;
+            }
+            Command::Color4f { red, green, blue, alpha } => {
+                // TODO
+                println!("Color4f: red: {}, green: {}, blue: {}, alpha: {}", red, green, blue, alpha);
+            }
+            Command::CullFace { mode } => {
+                // TODO
+                println!("CullFace: mode: {}", mode);
+            }
+            Command::DepthMask { flag } => {
+                // TODO
+                println!("DepthMask: flag: {}", flag);
+            }
+            Command::Disable { cap } => {
+                // TODO
+                println!("Disable: cap: 0x{:08x}", cap);
+            }
+            Command::Enable { cap } => {
+                // TODO
+                println!("Enable: cap: 0x{:08x}", cap);
+            }
+            Command::End => {
+                // TODO
+                println!("End");
+            }
+            Command::Lightf { light, pname, param } => {
+                // TODO
+                println!("Lightf: light: 0x{:08x}, pname: 0x{:08x}, param: {}", light, pname, param);
+            }
+            Command::LoadIdentity => {
+                // TODO
+                println!("LoadIdentity")
+            }
+            Command::MatrixMode { mode } => {
+                self.matrix_mode = match mode {
+                    GL_MODELVIEW => MatrixMode::ModelView,
+                    GL_PROJECTION => MatrixMode::Projection,
+                    _ => panic!("glMatrixMode called with invalid mode: 0x{:08x}", mode),
+                };
+            }
+            Command::MultiTexCoord2fARB { target, s, t } => {
+                // TODO
+                println!("Ortho: target: 0x{:08x}, s: {}, t: {}", target, s, t);
+            }
+            Command::MultMatrixd { _m } => {
+                // TODO
+                println!("MultMatrixd");
+            }
+            Command::MultMatrixf { _m } => {
+                // TODO
+                println!("MultMatrixf");
+            }
+            Command::Normal3fv { v } => {
+                // TODO
+                println!("Normal3fv: v: {}, {}, {}", v[0], v[1], v[2]);
+            }
+            Command::Ortho { left, right, bottom, top, zNear, zFar } => {
+                // TODO
+                println!("Ortho: left: {}, right: {}, bottom: {}, top: {}, zNear: {}, zFar: {}", left, right, bottom, top, zNear, zFar);
+            }
+            Command::PolygonMode { face, mode } => {
+                // TODO
+                println!("Enable: face: 0x{:08x}, mode: 0x{:08x}", face, mode);
+            }
+            Command::PopMatrix => {
+                // TODO
+                println!("PopMatrix");
+            }
+            Command::PushMatrix => {
+                // TODO
+                println!("PushMatrix");
+            }
+            Command::ShadeModel { mode } => {
+                // TODO
+                println!("ShadeModel: mode: 0x{:08x}", mode);
+            }
+            Command::TexCoord2f { s, t } => {
+                // TODO
+                println!("TexCoord2f: s: {}, t: {}", s, t);
+            }
+            Command::TexGenf { coord, pname, param } => {
+                // TODO
+                println!("TexGenf: coord: 0x{:08x}, pname: 0x{:08x}, param: {}", coord, pname, param);
+            }
+            Command::TexParameteri { target, pname, param } => {
+                match target {
+                    GL_TEXTURE_2D => {
+                        let texture = &mut self.textures[self.texture_2d as usize];
+                        match pname {
+                            // TODO: De-dupe filter param decoding
+                            GL_TEXTURE_MAG_FILTER => match param {
+                                GL_LINEAR => {
+                                    texture.mag_filter = TextureFilter::Linear;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MAG_FILTER: 0x{:08x}", param)
+                            }
+                            GL_TEXTURE_MIN_FILTER => match param {
+                                GL_LINEAR => {
+                                    texture.min_filter = TextureFilter::Linear;
+                                }
+                                GL_LINEAR_MIPMAP_NEAREST => {
+                                    texture.min_filter = TextureFilter::LinearMipmapNearest;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MIN_FILTER: 0x{:08x}", param)
+                            }
+                            _ => panic!("glTexParameteri called with invalid pname: 0x{:08x}", pname)
+                        }
+                    }
+                    _ => panic!("glTexParameteri called with invalid target: 0x{:08x}", target)
+                }
+            }
+            Command::Translated { x, y, z } => {
+                // TODO
+                println!("Translated: {}, {}, {}", x, y, z);
+            }
+            Command::Vertex3f { x, y, z } => {
+                // TODO
+                println!("Vertex3f: {}, {}, {}", x, y, z);
+            }
+            Command::Viewport { x, y, width, height } => {
+                // TODO
+                println!("Viewport: {}, {}, {}, {}", x, y, width, height);
+            }
+        }
+    }
+
+    fn gen_lists(&mut self, range: GLsizei) -> GLuint {
+        let ret = self.display_lists.len() as _;
+        for _ in 0..range {
+            self.display_lists.push(DisplayList::new());
+        }
+        ret
     }
 
     unsafe fn gen_textures(&mut self, n: GLsizei, textures: *mut GLuint) {
@@ -203,86 +435,28 @@ impl Context {
     }
 
     fn issue(&mut self, command: Command) {
-        // TODO: Store command in current display list, if any
-        // TODO: Don't execute command if a display list is active and the list mode isn't GL_COMPILE_AND_EXECUTE
-        match command {
-            Command::BindTexture { target, texture } => {
-                match target {
-                    GL_TEXTURE_2D => {
-                        self.texture_2d = texture;
-                    }
-                    _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
-                }
+        if let Some(list) = self.new_list {
+            if self.new_list_mode == GL_COMPILE_AND_EXECUTE {
+                self.execute(command.clone());
             }
-            Command::Clear { mask } => {
-                // TODO
-                println!("Clear: mask: 0x{:08x}", mask);
-            }
-            Command::ClearColor { red, green, blue, alpha } => {
-                self.clear_color_red = red;
-                self.clear_color_green = green;
-                self.clear_color_blue = blue;
-                self.clear_color_alpha = alpha;
-            }
-            Command::Disable { cap } => {
-                // TODO
-                println!("Disable: cap: 0x{:08x}", cap);
-            }
-            Command::LoadIdentity => {
-                // TODO
-                println!("LoadIdentity")
-            }
-            Command::MatrixMode { mode } => {
-                self.matrix_mode = match mode {
-                    GL_MODELVIEW => MatrixMode::ModelView,
-                    GL_PROJECTION => MatrixMode::Projection,
-                    _ => panic!("glMatrixMode called with invalid mode: 0x{:08x}", mode),
-                };
-            }
-            Command::MultMatrixd { _m } => {
-                // TODO
-                println!("MultMatrixd");
-            }
-            Command::Ortho { left, right, bottom, top, zNear, zFar } => {
-                // TODO
-                println!("Ortho: left: {}, right: {}, bottom: {}, top: {}, zNear: {}, zFar: {}", left, right, bottom, top, zNear, zFar);
-            }
-            Command::PushMatrix => {
-                // TODO
-                println!("PushMatrix");
-            }
-            Command::TexParameteri { target, pname, param } => {
-                match target {
-                    GL_TEXTURE_2D => {
-                        let texture = &mut self.textures[self.texture_2d as usize];
-                        match pname {
-                            // TODO: De-dupe filter param decoding
-                            GL_TEXTURE_MAG_FILTER => match param {
-                                GL_LINEAR => {
-                                    texture.mag_filter = TextureFilter::Linear;
-                                }
-                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MAG_FILTER: 0x{:08x}", param)
-                            }
-                            GL_TEXTURE_MIN_FILTER => match param {
-                                GL_LINEAR => {
-                                    texture.min_filter = TextureFilter::Linear;
-                                }
-                                GL_LINEAR_MIPMAP_NEAREST => {
-                                    texture.min_filter = TextureFilter::LinearMipmapNearest;
-                                }
-                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MIN_FILTER: 0x{:08x}", param)
-                            }
-                            _ => panic!("glTexParameteri called with invalid pname: 0x{:08x}", pname)
-                        }
-                    }
-                    _ => panic!("glTexParameteri called with invalid target: 0x{:08x}", target)
-                }
-            }
-            Command::Viewport { x, y, width, height } => {
-                // TODO
-                println!("Viewport: {}, {}, {}, {}", x, y, width, height);
-            }
+            self.display_lists[list as usize].commands.push(command);
+        } else {
+            self.execute(command);
         }
+    }
+
+    fn new_list(&mut self, list: GLuint, mode: GLenum) {
+        self.new_list = Some(list);
+        self.new_list_mode = match mode {
+            GL_COMPILE | GL_COMPILE_AND_EXECUTE => mode,
+            _ => panic!("glNewList called with invalid mode: 0x{:08x}", mode)
+        };
+        self.display_lists[list as usize].commands.clear();
+    }
+
+    fn normal_pointer(&mut self, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        // TODO
+        println!("NormalPointer: type: 0x{:08x}, stride: 0x{:08x}, pointer: 0x{:08x}", type_, stride, pointer as u32);
     }
 
     fn pixel_storei(&mut self, pname: GLenum, param: GLint) {
@@ -323,6 +497,11 @@ impl Context {
             _ => panic!("glPixelStorei called with invalid pname: 0x{:08x}", pname)
         }
     }
+
+    fn vertex_pointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        // TODO
+        println!("NormalPointer: size: 0x{:08x}, type: 0x{:08x}, stride: 0x{:08x}, pointer: 0x{:08x}", size, type_, stride, pointer as u32);
+    }
 }
 
 static mut CONTEXT: Option<Context> = None;
@@ -360,18 +539,18 @@ pub unsafe extern "system" fn DllMain(_hinstDLL: HINSTANCE, fdwReason: DWORD, _l
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glActiveTextureARB(_texture: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glActiveTextureARB(texture: GLenum) {
+    context().issue(Command::ActiveTextureARB { texture });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glArrayElement(_index: GLint) {
-    unimplemented!()
+pub extern "stdcall" fn glArrayElement(index: GLint) {
+    context().issue(Command::ArrayElement { index });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glBegin(_mode: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glBegin(mode: GLenum) {
+    context().issue(Command::Begin { mode });
 }
 
 #[no_mangle]
@@ -380,13 +559,13 @@ pub extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glBlendFunc(_sfactor: GLenum, _dfactor: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glBlendFunc(sfactor: GLenum, dfactor: GLenum) {
+    context().issue(Command::BlendFunc { sfactor, dfactor });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glCallList(_list: GLuint) {
-    unimplemented!()
+pub extern "stdcall" fn glCallList(list: GLuint) {
+    context().issue(Command::CallList { list });
 }
 
 #[no_mangle]
@@ -415,13 +594,13 @@ pub extern "stdcall" fn glColor3f(_red: GLfloat, _green: GLfloat, _blue: GLfloat
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glColor4f(_red: GLfloat, _green: GLfloat, _blue: GLfloat, _alpha: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glColor4f(red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat) {
+    context().issue(Command::Color4f { red, green, blue, alpha });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glCullFace(_mode: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glCullFace(mode: GLenum) {
+    context().issue(Command::CullFace { mode });
 }
 
 #[no_mangle]
@@ -430,8 +609,8 @@ pub extern "stdcall" fn glDepthFunc(_func: GLenum) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glDepthMask(_flag: GLboolean) {
-    unimplemented!()
+pub extern "stdcall" fn glDepthMask(flag: GLboolean) {
+    context().issue(Command::DepthMask { flag });
 }
 
 #[no_mangle]
@@ -440,28 +619,28 @@ pub extern "stdcall" fn glDisable(cap: GLenum) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glDisableClientState(_array: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glDisableClientState(array: GLenum) {
+    context().disable_client_state(array);
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glEnable(_cap: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glEnable(cap: GLenum) {
+    context().issue(Command::Enable { cap });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glEnableClientState(_array: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glEnableClientState(array: GLenum) {
+    context().enable_client_state(array);
 }
 
 #[no_mangle]
 pub extern "stdcall" fn glEnd() {
-    unimplemented!()
+    context().issue(Command::End);
 }
 
 #[no_mangle]
 pub extern "stdcall" fn glEndList() {
-    unimplemented!()
+    context().end_list();
 }
 
 #[no_mangle]
@@ -490,8 +669,8 @@ pub extern "stdcall" fn glEvalPoint2(_i: GLint, _j: GLint) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glGenLists(_range: GLsizei) -> GLuint {
-    unimplemented!()
+pub extern "stdcall" fn glGenLists(range: GLsizei) -> GLuint {
+    context().gen_lists(range)
 }
 
 #[no_mangle]
@@ -521,13 +700,14 @@ pub extern "stdcall" fn glGetString(_name: GLenum) -> *const GLubyte {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glLightf(_light: GLenum, _pname: GLenum, _param: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glLightf(light: GLenum, pname: GLenum, param: GLfloat) {
+    context().issue(Command::Lightf { light, pname, param });
 }
 
 #[no_mangle]
 pub extern "stdcall" fn glLightfv(_light: GLenum, _pname: GLenum, _params: *const GLfloat) {
-    unimplemented!()
+    // TODO: Parameter unpacking needs to happen here
+    println!("Lightfv");
 }
 
 #[no_mangle]
@@ -557,7 +737,8 @@ pub extern "stdcall" fn glMapGrid2d(_un: GLint, _u1: GLdouble, _u2: GLdouble, _v
 
 #[no_mangle]
 pub extern "stdcall" fn glMaterialfv(_face: GLenum, _pname: GLenum, _params: *const GLfloat) {
-    unimplemented!()
+    // TODO: Parameter unpacking needs to happen here
+    println!("Materialfv");
 }
 
 #[no_mangle]
@@ -565,162 +746,130 @@ pub extern "stdcall" fn glMatrixMode(mode: GLenum) {
     context().issue(Command::MatrixMode { mode });
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1dEXT(_target: GLenum, _s: GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1dvARB(_target: GLenum, _v: *const GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1fARB(_target: GLenum, _s: GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1fvARB(_target: GLenum, _v: *const GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1iARB(_target: GLenum, _s: GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1ivARB(_target: GLenum, _v: *const GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1sARB(_target: GLenum, _s: GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord1svARB(_target: GLenum, _v: *const GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2dARB(_target: GLenum, _s: GLdouble, _t: GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2dvARB(_target: GLenum, _v: *const GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
-extern "stdcall" fn glMultiTexCoord2fARB(_target: GLenum, _s: GLfloat, _t: GLfloat) {
-    unimplemented!()
+extern "stdcall" fn glMultiTexCoord2fARB(target: GLenum, s: GLfloat, t: GLfloat) {
+    context().issue(Command::MultiTexCoord2fARB { target, s, t });
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2fvARB(_target: GLenum, _v: *const GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2iARB(_target: GLenum, _s: GLint, _t: GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2ivARB(_target: GLenum, _v: *const GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2sARB(_target: GLenum, _s: GLshort, _t: GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord2svARB(_target: GLenum, _v: *const GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3dARB(_target: GLenum, _s: GLdouble, _t: GLdouble, _r: GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3dvARB(_target: GLenum, _v: *const GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3fARB(_target: GLenum, _s: GLfloat, _t: GLfloat, _r: GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3fvARB(_target: GLenum, _v: *const GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3iARB(_target: GLenum, _s: GLint, _t: GLint, _r: GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3ivARB(_target: GLenum, _v: *const GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3sARB(_target: GLenum, _s: GLshort, _t: GLshort, _r: GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord3svARB(_target: GLenum, _v: *const GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4dARB(_target: GLenum, _s: GLdouble, _t: GLdouble, _r: GLdouble, _q: GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4dvARB(_target: GLenum, _v: *const GLdouble) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4fARB(_target: GLenum, _s: GLfloat, _t: GLfloat, _r: GLfloat, _q: GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4fvARB(_target: GLenum, _v: *const GLfloat) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4iARB(_target: GLenum, _s: GLint, _t: GLint, _r: GLint, _q: GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4ivARB(_target: GLenum, _v: *const GLint) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4sARB(_target: GLenum, _s: GLshort, _t: GLshort, _r: GLshort, _q: GLshort) {
     unimplemented!()
 }
 
-#[allow(non_snake_case)]
 extern "stdcall" fn glMultiTexCoord4svARB(_target: GLenum, _v: *const GLshort) {
     unimplemented!()
 }
@@ -733,13 +882,15 @@ pub extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glMultMatrixf(_m: *const GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glMultMatrixf(m: *const GLfloat) {
+    let mut m_copy = [0.0; 16];
+    m_copy.copy_from_slice(unsafe { slice::from_raw_parts(m, 16) });
+    context().issue(Command::MultMatrixf { _m: m_copy });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glNewList(_list: GLuint, _mode: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glNewList(list: GLuint, mode: GLenum) {
+    context().new_list(list, mode);
 }
 
 #[no_mangle]
@@ -748,13 +899,15 @@ pub extern "stdcall" fn glNormal3f(_nx: GLfloat, _ny: GLfloat, _nz: GLfloat) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glNormal3fv(_v: *const GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glNormal3fv(v: *const GLfloat) {
+    let mut v_copy = [0.0; 3];
+    v_copy.copy_from_slice(unsafe { slice::from_raw_parts(v, 3) });
+    context().issue(Command::Normal3fv { v: v_copy });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glNormalPointer(_type: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {
-    unimplemented!()
+pub extern "stdcall" fn glNormalPointer(type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+    context().normal_pointer(type_, stride, pointer);
 }
 
 #[no_mangle]
@@ -768,8 +921,8 @@ pub extern "stdcall" fn glPixelStorei(pname: GLenum, param: GLint) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glPolygonMode(_face: GLenum, _mode: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glPolygonMode(face: GLenum, mode: GLenum) {
+    context().issue(Command::PolygonMode { face, mode });
 }
 
 #[no_mangle]
@@ -779,7 +932,7 @@ pub extern "stdcall" fn glPopAttrib() {
 
 #[no_mangle]
 pub extern "stdcall" fn glPopMatrix() {
-    unimplemented!()
+    context().issue(Command::PopMatrix);
 }
 
 #[no_mangle]
@@ -798,18 +951,18 @@ pub extern "stdcall" fn glScalef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glShadeModel(_mode: GLenum) {
-    unimplemented!()
+pub extern "stdcall" fn glShadeModel(mode: GLenum) {
+    context().issue(Command::ShadeModel { mode });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glTexCoord2f(_s: GLfloat, _t: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glTexCoord2f(s: GLfloat, t: GLfloat) {
+    context().issue(Command::TexCoord2f { s, t });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glTexGenf(_coord: GLenum, _pname: GLenum, _param: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glTexGenf(coord: GLenum, pname: GLenum, param: GLfloat) {
+    context().issue(Command::TexGenf { coord, pname, param });
 }
 
 #[no_mangle]
@@ -834,8 +987,8 @@ pub extern "stdcall" fn glTexImage2D(target: GLenum, level: GLint, internalforma
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glTranslated(_x: GLdouble, _y: GLdouble, _z: GLdouble) {
-    unimplemented!()
+pub extern "stdcall" fn glTranslated(x: GLdouble, y: GLdouble, z: GLdouble) {
+    context().issue(Command::Translated { x, y, z });
 }
 
 #[no_mangle]
@@ -844,13 +997,13 @@ pub extern "stdcall" fn glTranslatef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glVertex3f(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glVertex3f(x: GLfloat, y: GLfloat, z: GLfloat) {
+    context().issue(Command::Vertex3f { x, y, z });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glVertexPointer(_size: GLint, _type: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {
-    unimplemented!()
+pub extern "stdcall" fn glVertexPointer(size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+    context().vertex_pointer(size, type_, stride, pointer);
 }
 
 #[no_mangle]
@@ -865,7 +1018,8 @@ pub extern "stdcall" fn wglCreateContext(_dc: HDC) -> HGLRC {
 
 #[no_mangle]
 pub extern "stdcall" fn wglDeleteContext(_rc: HGLRC) -> BOOL {
-    unimplemented!()
+    println!("wglDeleteContext");
+    TRUE
 }
 
 #[no_mangle]
