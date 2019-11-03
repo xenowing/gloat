@@ -1,6 +1,8 @@
 #![allow(non_snake_case)]
 
+use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
+use std::rc::Rc;
 use std::slice;
 
 type LPVOID = *mut c_void;
@@ -98,7 +100,6 @@ impl Texture {
     }
 }
 
-#[derive(Clone)]
 enum Command {
     ActiveTextureARB { texture: GLenum },
     ArrayElement { index: GLint },
@@ -140,7 +141,7 @@ struct Context {
     clear_color_blue: GLfloat,
     clear_color_alpha: GLfloat,
 
-    display_lists: Vec<DisplayList>,
+    display_lists: Vec<Rc<RefCell<DisplayList>>>,
     new_list: Option<GLuint>,
     new_list_mode: GLenum,
 
@@ -236,9 +237,8 @@ impl Context {
                 println!("BlendFunc: sfactor: 0x{:08x}, dfactor: 0x{:08x}", sfactor, dfactor);
             }
             Command::CallList { list } => {
-                // TODO: This clone is potentially very expensive, but there's no other way to get Rust to accept &mut self here.
-                for command in self.display_lists[list as usize].commands.clone().into_iter() {
-                    self.execute(&command);
+                for command in self.display_lists[list as usize].clone().borrow().commands.iter() {
+                    self.execute(command);
                 }
             }
             Command::Clear { mask } => {
@@ -379,7 +379,7 @@ impl Context {
     fn gen_lists(&mut self, range: GLsizei) -> GLuint {
         let ret = self.display_lists.len() as _;
         for _ in 0..range {
-            self.display_lists.push(DisplayList::new());
+            self.display_lists.push(Rc::new(RefCell::new(DisplayList::new())));
         }
         ret
     }
@@ -441,7 +441,7 @@ impl Context {
             if self.new_list_mode == GL_COMPILE_AND_EXECUTE {
                 self.execute(&command);
             }
-            self.display_lists[list as usize].commands.push(command);
+            self.display_lists[list as usize].borrow_mut().commands.push(command);
         } else {
             self.execute(&command);
         }
@@ -453,7 +453,7 @@ impl Context {
             GL_COMPILE | GL_COMPILE_AND_EXECUTE => mode,
             _ => panic!("glNewList called with invalid mode: 0x{:08x}", mode)
         };
-        self.display_lists[list as usize].commands.clear();
+        self.display_lists[list as usize].borrow_mut().commands.clear();
     }
 
     fn normal_pointer(&mut self, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
