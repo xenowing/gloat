@@ -28,6 +28,8 @@ type GLbitfield = u32;
 type GLdouble = f64;
 type GLvoid = c_void;
 
+const GL_TEXTURE_2D: GLenum = 0x0de1;
+
 const GL_MODELVIEW: GLenum = 0x1700;
 const GL_PROJECTION: GLenum = 0x1701;
 
@@ -36,14 +38,48 @@ enum MatrixMode {
     Projection,
 }
 
+struct Texture {
+    // TODO
+}
+
+impl Texture {
+    fn new() -> Texture {
+        Texture {
+            // TODO
+        }
+    }
+}
+
 struct Context {
     matrix_mode: MatrixMode,
+
+    textures: Vec<Texture>,
+    texture_2d: GLuint,
 }
 
 impl Context {
     fn new() -> Context {
         Context {
             matrix_mode: MatrixMode::ModelView,
+
+            textures: Vec::new(),
+            texture_2d: 0,
+        }
+    }
+
+    fn bind_texture(&mut self, target: GLenum, texture: GLuint) {
+        match target {
+            GL_TEXTURE_2D => {
+                self.texture_2d = texture;
+            }
+            _ => panic!("glBindTexture called with invalid target: 0x{:08x}", target)
+        }
+    }
+
+    unsafe fn gen_textures(&mut self, n: GLsizei, textures: *mut GLuint) {
+        for i in 0..n {
+            *textures.add(i as _) = self.textures.len() as _;
+            self.textures.push(Texture::new());
         }
     }
 
@@ -117,8 +153,9 @@ pub extern "stdcall" fn glBegin(_mode: GLenum) {
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "stdcall" fn glBindTexture(_target: GLenum, _texture: GLuint) {
-    unimplemented!()
+pub unsafe extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
+    let context = CONTEXT.as_mut().unwrap();
+    context.bind_texture(target, texture);
 }
 
 #[no_mangle]
@@ -261,8 +298,9 @@ pub extern "stdcall" fn glGenLists(_range: GLsizei) -> GLuint {
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub extern "stdcall" fn glGenTextures(_n: GLsizei, _textures: *mut GLuint) {
-    unimplemented!()
+pub unsafe extern "stdcall" fn glGenTextures(n: GLsizei, textures: *mut GLuint) {
+    let context = CONTEXT.as_mut().unwrap();
+    context.gen_textures(n, textures);
 }
 
 #[no_mangle]
