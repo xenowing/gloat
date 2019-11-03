@@ -118,6 +118,10 @@ impl Context {
 
 static mut CONTEXT: Option<Context> = None;
 
+fn context() -> &'static mut Context {
+    unsafe { CONTEXT.as_mut().expect("Attempted to get context reference when no context was initialized") }
+}
+
 const DLL_PROCESS_DETACH: DWORD = 0;
 const DLL_PROCESS_ATTACH: DWORD = 1;
 const DLL_THREAD_ATTACH: DWORD = 2;
@@ -167,9 +171,8 @@ pub extern "stdcall" fn glBegin(_mode: GLenum) {
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
-    let context = CONTEXT.as_mut().unwrap();
-    context.issue(Command::BindTexture { target, texture });
+pub extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
+    context().issue(Command::BindTexture { target, texture });
 }
 
 #[no_mangle]
@@ -313,8 +316,7 @@ pub extern "stdcall" fn glGenLists(_range: GLsizei) -> GLuint {
 #[no_mangle]
 #[allow(non_snake_case)]
 pub unsafe extern "stdcall" fn glGenTextures(n: GLsizei, textures: *mut GLuint) {
-    let context = CONTEXT.as_mut().unwrap();
-    context.gen_textures(n, textures);
+    context().gen_textures(n, textures);
 }
 
 #[no_mangle]
@@ -355,9 +357,8 @@ pub extern "stdcall" fn glLightfv(_light: GLenum, _pname: GLenum, _params: *cons
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "stdcall" fn glLoadIdentity() {
-    let context = CONTEXT.as_mut().unwrap();
-    context.issue(Command::LoadIdentity);
+pub extern "stdcall" fn glLoadIdentity() {
+    context().issue(Command::LoadIdentity);
 }
 
 #[no_mangle]
@@ -392,9 +393,8 @@ pub extern "stdcall" fn glMaterialfv(_face: GLenum, _pname: GLenum, _params: *co
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "stdcall" fn glMatrixMode(mode: GLenum) {
-    let context = CONTEXT.as_mut().unwrap();
-    context.issue(Command::MatrixMode { mode });
+pub extern "stdcall" fn glMatrixMode(mode: GLenum) {
+    context().issue(Command::MatrixMode { mode });
 }
 
 #[allow(non_snake_case)]
@@ -559,11 +559,10 @@ extern "stdcall" fn glMultiTexCoord4svARB(_target: GLenum, _v: *const GLshort) {
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
-    let context = CONTEXT.as_mut().unwrap();
-    let mut copy = [0.0; 16];
-    copy.copy_from_slice(slice::from_raw_parts(m, 16));
-    context.issue(Command::MultMatrixd { _m: copy });
+pub extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
+    let mut m_copy = [0.0; 16];
+    m_copy.copy_from_slice(unsafe { slice::from_raw_parts(m, 16) });
+    context().issue(Command::MultMatrixd { _m: m_copy });
 }
 
 #[no_mangle]
@@ -712,9 +711,8 @@ pub extern "stdcall" fn glVertexPointer(_size: GLint, _type: GLenum, _stride: GL
 
 #[no_mangle]
 #[allow(non_snake_case)]
-pub unsafe extern "stdcall" fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei) {
-    let context = CONTEXT.as_mut().unwrap();
-    context.issue(Command::Viewport { x, y, width, height });
+pub extern "stdcall" fn glViewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei) {
+    context().issue(Command::Viewport { x, y, width, height });
 }
 
 #[no_mangle]
