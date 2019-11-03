@@ -1020,7 +1020,7 @@ pub extern "stdcall" fn wglCreateContext(_dc: HDC) -> HGLRC {
 
 #[no_mangle]
 pub extern "stdcall" fn wglDeleteContext(_rc: HGLRC) -> BOOL {
-    println!("wglDeleteContext");
+    println!("wglDeleteContext called, ignoring");
     TRUE
 }
 
