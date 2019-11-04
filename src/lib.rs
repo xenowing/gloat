@@ -1,6 +1,10 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
+mod matrix;
+
 use minifb::{Window, WindowOptions};
+
+use matrix::*;
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
@@ -142,8 +146,8 @@ enum Command {
     LoadIdentity,
     MatrixMode { mode: GLenum },
     MultiTexCoord2fARB { target: GLenum, s: GLfloat, t: GLfloat },
-    MultMatrixd { _m: [GLdouble; 16] },
-    MultMatrixf { _m: [GLfloat; 16] },
+    MultMatrixd { m: [GLdouble; 16] },
+    MultMatrixf { m: [GLfloat; 16] },
     Normal3fv { v: [GLfloat; 3] },
     Ortho { left: GLdouble, right: GLdouble, bottom: GLdouble, top: GLdouble, zNear: GLdouble, zFar: GLdouble },
     PolygonMode { face: GLenum, mode: GLenum },
@@ -226,7 +230,10 @@ struct Context {
     new_list: Option<GLuint>,
     new_list_mode: GLenum,
 
+    modelview: Matrix,
+    projection: Matrix,
     matrix_mode: MatrixMode,
+    matrix_stack: Vec<Matrix>,
 
     textures: Vec<Texture>,
     texture_2d: GLuint,
@@ -263,7 +270,10 @@ impl Context {
             new_list: None,
             new_list_mode: 0,
 
+            modelview: Matrix::identity(),
+            projection: Matrix::identity(),
             matrix_mode: MatrixMode::ModelView,
+            matrix_stack: Vec::new(),
 
             textures: Vec::new(),
             texture_2d: 0,
@@ -281,6 +291,28 @@ impl Context {
             pack_skip_pixels: 0,
             pack_alignment: 4,
         }
+    }
+
+    fn current_matrix(&self) -> Matrix {
+        match self.matrix_mode {
+            MatrixMode::ModelView => self.modelview,
+            MatrixMode::Projection => self.projection,
+        }
+    }
+
+    fn set_current_matrix(&mut self, m: Matrix) {
+        match self.matrix_mode {
+            MatrixMode::ModelView => {
+                self.modelview = m;
+            }
+            MatrixMode::Projection => {
+                self.projection = m;
+            }
+        }
+    }
+
+    fn multiply_current_matrix(&mut self, m: Matrix) {
+        self.set_current_matrix(self.current_matrix() * m);
     }
 
     fn disable_client_state(&mut self, array: GLenum) {
@@ -381,8 +413,7 @@ impl Context {
                 println!("Lightf: light: 0x{:08x}, pname: 0x{:08x}, param: {}", light, pname, param);
             }
             Command::LoadIdentity => {
-                // TODO
-                println!("LoadIdentity")
+                self.set_current_matrix(Matrix::identity());
             }
             Command::MatrixMode { mode } => {
                 self.matrix_mode = match mode {
@@ -395,33 +426,29 @@ impl Context {
                 // TODO
                 println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
             }
-            Command::MultMatrixd { _m } => {
-                // TODO
-                println!("MultMatrixd");
+            Command::MultMatrixd { m } => {
+                self.multiply_current_matrix(Matrix::from_doubles(&m));
             }
-            Command::MultMatrixf { _m } => {
-                // TODO
-                println!("MultMatrixf");
+            Command::MultMatrixf { m } => {
+                self.multiply_current_matrix(Matrix::from_floats(&m));
             }
             Command::Normal3fv { v } => {
                 // TODO
                 println!("Normal3fv: v: {}, {}, {}", v[0], v[1], v[2]);
             }
             Command::Ortho { left, right, bottom, top, zNear, zFar } => {
-                // TODO
-                println!("Ortho: left: {}, right: {}, bottom: {}, top: {}, zNear: {}, zFar: {}", left, right, bottom, top, zNear, zFar);
+                self.multiply_current_matrix(Matrix::ortho(left as f32, right as f32, bottom as f32, top as f32, zNear as f32, zFar as f32));
             }
             Command::PolygonMode { face, mode } => {
                 // TODO
                 println!("Enable: face: 0x{:08x}, mode: 0x{:08x}", face, mode);
             }
             Command::PopMatrix => {
-                // TODO
-                println!("PopMatrix");
+                let m = self.matrix_stack.pop().expect("Matrix stack underflow");
+                self.set_current_matrix(m);
             }
             Command::PushMatrix => {
-                // TODO
-                println!("PushMatrix");
+                self.matrix_stack.push(self.current_matrix());
             }
             Command::ShadeModel { mode } => {
                 // TODO
@@ -463,8 +490,7 @@ impl Context {
                 }
             }
             Command::Translated { x, y, z } => {
-                // TODO
-                println!("Translated: {}, {}, {}", x, y, z);
+                self.multiply_current_matrix(Matrix::translation(x as f32, y as f32, z as f32));
             }
             Command::Vertex3f { x, y, z } => {
                 // TODO
@@ -987,14 +1013,14 @@ extern "stdcall" fn glMultiTexCoord4svARB(_target: GLenum, _v: *const GLshort) {
 pub extern "stdcall" fn glMultMatrixd(m: *const GLdouble) {
     let mut m_copy = [0.0; 16];
     m_copy.copy_from_slice(unsafe { slice::from_raw_parts(m, 16) });
-    context().issue(Command::MultMatrixd { _m: m_copy });
+    context().issue(Command::MultMatrixd { m: m_copy });
 }
 
 #[no_mangle]
 pub extern "stdcall" fn glMultMatrixf(m: *const GLfloat) {
     let mut m_copy = [0.0; 16];
     m_copy.copy_from_slice(unsafe { slice::from_raw_parts(m, 16) });
-    context().issue(Command::MultMatrixf { _m: m_copy });
+    context().issue(Command::MultMatrixf { m: m_copy });
 }
 
 #[no_mangle]
