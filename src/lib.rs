@@ -526,13 +526,13 @@ pub unsafe extern "system" fn DllMain(_hinstDLL: HINSTANCE, fdwReason: DWORD, _l
         }
         DLL_PROCESS_DETACH => {
             println!("DllMain: process detach");
+            CONTEXT = None;
         }
         DLL_THREAD_ATTACH => {
             println!("DllMain: thread attach");
         }
         DLL_THREAD_DETACH => {
             println!("DllMain: thread detach");
-            CONTEXT = None;
         }
         _ => panic!("DllMain called with invalid fdwReason value: {}", fdwReason)
     }
