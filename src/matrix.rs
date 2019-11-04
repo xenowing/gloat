@@ -1,4 +1,6 @@
-use core::ops::Mul;
+use crate::vec4::*;
+
+use std::ops::Mul;
 
 const NUM_ROWS: usize = 4;
 const NUM_COLS: usize = 4;
@@ -108,5 +110,19 @@ impl<'a, 'b> Mul<&'a Matrix> for &'b Matrix {
                 (self.values[12] * other.values[2]) + (self.values[13] * other.values[06]) + (self.values[14] * other.values[10]) + (self.values[15] * other.values[14]),
                 (self.values[12] * other.values[3]) + (self.values[13] * other.values[07]) + (self.values[14] * other.values[11]) + (self.values[15] * other.values[15])]
         }
+    }
+}
+
+impl Mul<Vec4> for Matrix {
+    type Output = Vec4;
+
+    fn mul(self, other: Vec4) -> Vec4 {
+        // TODO: Simplify as dot products with row vectors
+        Vec4::new(
+            self.values[00] * other.x() + self.values[04] * other.y() + self.values[08] * other.z() + self.values[12] * other.w(),
+            self.values[01] * other.x() + self.values[05] * other.y() + self.values[09] * other.z() + self.values[13] * other.w(),
+            self.values[02] * other.x() + self.values[06] * other.y() + self.values[10] * other.z() + self.values[14] * other.w(),
+            self.values[03] * other.x() + self.values[07] * other.y() + self.values[11] * other.z() + self.values[15] * other.w()
+        )
     }
 }

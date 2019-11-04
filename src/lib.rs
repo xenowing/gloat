@@ -1,13 +1,17 @@
 #![allow(non_snake_case, non_camel_case_types)]
+#![feature(stdarch)]
 
 mod matrix;
+mod vec4;
 
 use minifb::{Window, WindowOptions};
 
 use matrix::*;
+use vec4::*;
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
+use std::ptr;
 use std::rc::Rc;
 use std::slice;
 
@@ -82,6 +86,8 @@ const GL_TEXTURE_2D: GLenum = 0x0de1;
 const GL_COMPILE: GLenum = 0x1300;
 const GL_COMPILE_AND_EXECUTE: GLenum = 0x1301;
 
+const GL_FLOAT: GLenum = 0x1406;
+
 const GL_MODELVIEW: GLenum = 0x1700;
 const GL_PROJECTION: GLenum = 0x1701;
 
@@ -90,6 +96,9 @@ const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
 
 const GL_TEXTURE_MAG_FILTER: GLenum = 0x2800;
 const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
+
+const GL_VERTEX_ARRAY: GLenum = 0x8074;
+const GL_NORMAL_ARRAY: GLenum = 0x8075;
 
 struct DisplayList {
     commands: Vec<Command>,
@@ -129,7 +138,6 @@ impl Texture {
 
 enum Command {
     ActiveTextureARB { texture: GLenum },
-    ArrayElement { index: GLint },
     Begin { mode: GLenum },
     BindTexture { target: GLenum, texture: GLuint },
     BlendFunc { sfactor: GLenum, dfactor: GLenum },
@@ -250,6 +258,19 @@ struct Context {
     pack_skip_rows: GLint,
     pack_skip_pixels: GLint,
     pack_alignment: GLint,
+
+    vertex_array_enabled: bool,
+    vertex_pointer: *const GLvoid,
+    vertex_size: GLint,
+    vertex_type: GLenum,
+    vertex_stride: GLsizei,
+
+    normal_array_enabled: bool,
+
+    viewport_x: GLint,
+    viewport_y: GLint,
+    viewport_width: GLsizei,
+    viewport_height: GLsizei,
 }
 
 impl Context {
@@ -290,6 +311,19 @@ impl Context {
             pack_skip_rows: 0,
             pack_skip_pixels: 0,
             pack_alignment: 4,
+
+            normal_array_enabled: false,
+
+            vertex_array_enabled: false,
+            vertex_pointer: ptr::null(),
+            vertex_size: 0,
+            vertex_type: 0,
+            vertex_stride: 0,
+
+            viewport_x: 0,
+            viewport_y: 0,
+            viewport_width: WIDTH as _,
+            viewport_height: HEIGHT as _,
         }
     }
 
@@ -312,17 +346,48 @@ impl Context {
     }
 
     fn multiply_current_matrix(&mut self, m: Matrix) {
-        self.set_current_matrix(self.current_matrix() * m);
+        self.set_current_matrix(m * self.current_matrix());
+    }
+
+    fn array_element(&mut self, index: GLint) {
+        if self.normal_array_enabled {
+            // TODO
+        }
+        if self.vertex_array_enabled {
+            // TODO: Properly handle type, stride
+            let vertex_buffer = self.vertex_pointer as *const GLfloat;
+            unsafe {
+                let vertex = vertex_buffer.add((index * self.vertex_size) as usize);
+                let x = *vertex.add(0);
+                let y = *vertex.add(1);
+                let z = *vertex.add(2);
+                self.issue(Command::Vertex3f { x, y, z });
+            }
+        }
     }
 
     fn disable_client_state(&mut self, array: GLenum) {
-        // TODO
-        println!("DisableClientState: array: 0x{:08x}", array);
+        match array {
+            GL_VERTEX_ARRAY => {
+                self.vertex_array_enabled = false;
+            }
+            GL_NORMAL_ARRAY => {
+                self.normal_array_enabled = false;
+            }
+            _ => panic!("DisableClientState called with invalid array: 0x{:08x}", array)
+        }
     }
 
     fn enable_client_state(&mut self, array: GLenum) {
-        // TODO
-        println!("EnableClientState: array: 0x{:08x}", array);
+        match array {
+            GL_VERTEX_ARRAY => {
+                self.vertex_array_enabled = true;
+            }
+            GL_NORMAL_ARRAY => {
+                self.normal_array_enabled = true;
+            }
+            _ => panic!("EnableClientState called with invalid array: 0x{:08x}", array)
+        }
     }
 
     fn end_list(&mut self) {
@@ -334,10 +399,6 @@ impl Context {
             Command::ActiveTextureARB { texture } => {
                 // TODO
                 println!("ActiveTextureARB: texture: 0x{:08x}", texture);
-            }
-            Command::ArrayElement { index } => {
-                // TODO
-                println!("ArrayElement: index: 0x{:08x}", index);
             }
             Command::Begin { mode } => {
                 // TODO
@@ -361,6 +422,7 @@ impl Context {
                 }
             }
             Command::Clear { mask } => {
+                // TODO: Only clear within viewport
                 if (mask & GL_DEPTH_BUFFER_BIT) != 0 {
                     for depth in self.depth_buffer.iter_mut() {
                         *depth = 1.0;
@@ -424,7 +486,7 @@ impl Context {
             }
             Command::MultiTexCoord2fARB { target, s, t } => {
                 // TODO
-                println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
+                //println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
             }
             Command::MultMatrixd { m } => {
                 self.multiply_current_matrix(Matrix::from_doubles(&m));
@@ -434,7 +496,7 @@ impl Context {
             }
             Command::Normal3fv { v } => {
                 // TODO
-                println!("Normal3fv: v: {}, {}, {}", v[0], v[1], v[2]);
+                //println!("Normal3fv: v: {}, {}, {}", v[0], v[1], v[2]);
             }
             Command::Ortho { left, right, bottom, top, zNear, zFar } => {
                 self.multiply_current_matrix(Matrix::ortho(left as f32, right as f32, bottom as f32, top as f32, zNear as f32, zFar as f32));
@@ -493,12 +555,26 @@ impl Context {
                 self.multiply_current_matrix(Matrix::translation(x as f32, y as f32, z as f32));
             }
             Command::Vertex3f { x, y, z } => {
-                // TODO
-                println!("Vertex3f: {}, {}, {}", x, y, z);
+                // TODO: Properly build/display primitives!!!
+                let object = Vec4::new(x, y, z, 1.0);
+                let eye = self.modelview * object;
+                let clip = self.projection * eye;
+                //println!("clip: {}, {}, {}, {}", clip.x(), clip.y(), clip.z(), clip.w());
+                let ndc = clip / clip.w();
+                if ndc.x() >= -1.0 && ndc.x() <= 1.0 && ndc.y() >= -1.0 && ndc.y() <= 1.0 && ndc.z() >= -1.0 && ndc.z() <= 1.0 {
+                    let window_x = ((ndc.x() + 1.0) * (self.viewport_width as f32) / 2.0 + (self.viewport_x as f32)) as usize;
+                    let window_y = ((ndc.y() + 1.0) * (self.viewport_height as f32) / 2.0 + (self.viewport_y as f32)) as usize;
+                    //println!("****** {}, {}", window_x, window_y);
+                    if window_x < WIDTH && window_y < HEIGHT {
+                        self.back_buffer[(HEIGHT - 1 - window_y) * WIDTH + window_x] = 0xffffffff;
+                    }
+                }
             }
             Command::Viewport { x, y, width, height } => {
-                // TODO
-                println!("Viewport: {}, {}, {}, {}", x, y, width, height);
+                self.viewport_x = x;
+                self.viewport_y = y;
+                self.viewport_width = width;
+                self.viewport_height = height;
             }
         }
     }
@@ -634,8 +710,25 @@ impl Context {
     }
 
     fn vertex_pointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
-        // TODO
-        println!("NormalPointer: size: 0x{:08x}, type: 0x{:08x}, stride: 0x{:08x}, pointer: 0x{:08x}", size, type_, stride, pointer as u32);
+        match size {
+            3 => {
+                self.vertex_size = size;
+            }
+            _ => panic!("VertexPointer called with invalid size: {}", size)
+        }
+        match type_ {
+            GL_FLOAT => {
+                self.vertex_type = type_;
+            }
+            _ => panic!("VertexPointer called with invalid type: 0x{:08x}", type_)
+        }
+        match stride {
+            0 => {
+                self.vertex_stride = stride;
+            }
+            _ => panic!("VertexPointer called with invalid stride: {}", stride)
+        }
+        self.vertex_pointer = pointer;
     }
 }
 
@@ -680,7 +773,7 @@ pub extern "stdcall" fn glActiveTextureARB(texture: GLenum) {
 
 #[no_mangle]
 pub extern "stdcall" fn glArrayElement(index: GLint) {
-    context().issue(Command::ArrayElement { index });
+    context().array_element(index);
 }
 
 #[no_mangle]
