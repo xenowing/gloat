@@ -1,4 +1,4 @@
-#![allow(non_snake_case)]
+#![allow(non_snake_case, non_camel_case_types)]
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
@@ -11,7 +11,8 @@ type BOOL = i32;
 const FALSE: BOOL = 0;
 const TRUE: BOOL = 1;
 
-type DWORD = u32;
+type DWORD = i32;
+type PDWORD = *mut DWORD;
 
 type HANDLE = LPVOID;
 type HINSTANCE = HANDLE;
@@ -20,6 +21,19 @@ type HGLRC = HANDLE;
 
 type LPCSTR = LPVOID;
 type PROC = LPVOID;
+type SIZE_T = u32;
+
+const PAGE_READWRITE: DWORD = 0x04;
+
+#[link(name = "kernel32")]
+extern "stdcall" {
+    fn VirtualProtect(lpAddress: LPVOID, dwSize: SIZE_T, flNewProtect: DWORD, lpflOldProtect: PDWORD) -> BOOL;
+}
+
+#[link(name = "gdi32")]
+extern "stdcall" {
+    fn SwapBuffers(hdc: HDC) -> BOOL;
+}
 
 type GLboolean = i32;
 type GLubyte = u8;
@@ -135,7 +149,61 @@ enum Command {
     Viewport { x: GLint, y: GLint, width: GLsizei, height: GLsizei },
 }
 
+struct PatchedFunction {
+    original_addr: *mut u8,
+    restore_data: [u8; 5],
+}
+
+impl PatchedFunction {
+    fn new(original_addr: *mut u8, patch_addr: *const u8) -> PatchedFunction {
+        unsafe {
+            let mut old_protection = 0;
+            if VirtualProtect(original_addr as _, 5, PAGE_READWRITE, &mut old_protection as *mut _) == FALSE {
+                panic!("Couldn't make memory region readable/writable");
+            }
+
+            let patch_region = slice::from_raw_parts_mut(original_addr, 5);
+
+            let mut restore_data = [0; 5];
+            restore_data.copy_from_slice(patch_region);
+
+            let rel_addr = (patch_addr as usize).wrapping_sub((original_addr as usize).wrapping_add(5));
+            patch_region[0] = 0xe9; // JMP rel
+            patch_region[1..].copy_from_slice(&rel_addr.to_le_bytes());
+
+            if VirtualProtect(original_addr as _, 5, old_protection, &mut old_protection as *mut _) == FALSE {
+                panic!("Couldn't restore memory region protection");
+            }
+
+            PatchedFunction {
+                original_addr,
+                restore_data,
+            }
+        }
+    }
+}
+
+impl Drop for PatchedFunction {
+    fn drop(&mut self) {
+        unsafe {
+            let mut old_protection = 0;
+            if VirtualProtect(self.original_addr as _, 5, PAGE_READWRITE, &mut old_protection as *mut _) == FALSE {
+                panic!("Couldn't make memory region readable/writable");
+            }
+
+            let patch_region = slice::from_raw_parts_mut(self.original_addr, 5);
+            patch_region.copy_from_slice(&self.restore_data);
+
+            if VirtualProtect(self.original_addr as _, 5, old_protection, &mut old_protection as *mut _) == FALSE {
+                panic!("Couldn't restore memory region protection");
+            }
+        }
+    }
+}
+
 struct Context {
+    _swap_buffers: PatchedFunction,
+
     clear_color_red: GLfloat,
     clear_color_green: GLfloat,
     clear_color_blue: GLfloat,
@@ -167,6 +235,8 @@ struct Context {
 impl Context {
     fn new() -> Context {
         Context {
+            _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
+
             clear_color_red: 0.0,
             clear_color_green: 0.0,
             clear_color_blue: 0.0,
@@ -1073,4 +1143,8 @@ pub unsafe extern "stdcall" fn wglGetProcAddress(name: LPCSTR) -> PROC {
 pub extern "stdcall" fn wglMakeCurrent(_dc: HDC, _rc: HGLRC) -> BOOL {
     println!("wglMakeCurrent called, ignoring");
     TRUE
+}
+
+extern "stdcall" fn swap_buffers(dc: HDC) -> BOOL {
+    panic!("WE AIN'T SWAPPIN' SHIT!!! dc: 0x{:08x}", dc as u32);
 }
