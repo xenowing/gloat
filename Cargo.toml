@@ -11,3 +11,4 @@ name = "opengl32"
 crate-type = ["dylib"]
 
 [dependencies]
+minifb = "0.13"

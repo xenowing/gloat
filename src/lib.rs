@@ -1,9 +1,15 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
+use minifb::{Window, WindowOptions};
+
 use std::cell::RefCell;
 use std::ffi::{CStr, c_void};
 use std::rc::Rc;
 use std::slice;
+
+// TODO: Can we query this from the dc or something?
+const WIDTH: usize = 640;
+const HEIGHT: usize = 480;
 
 type LPVOID = *mut c_void;
 
@@ -202,6 +208,9 @@ impl Drop for PatchedFunction {
 }
 
 struct Context {
+    window: Window,
+    back_buffer: Vec<u32>,
+
     _swap_buffers: PatchedFunction,
 
     clear_color_red: GLfloat,
@@ -235,6 +244,9 @@ struct Context {
 impl Context {
     fn new() -> Context {
         Context {
+            window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions::default()).expect("Could not create output window"),
+            back_buffer: vec![0; WIDTH * HEIGHT],
+
             _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
 
             clear_color_red: 0.0,
@@ -568,6 +580,12 @@ impl Context {
             }
             _ => panic!("glPixelStorei called with invalid pname: 0x{:08x}", pname)
         }
+    }
+
+    fn swap_buffers(&mut self, dc: HDC) -> BOOL {
+        println!("swap_buffers: dc: 0x{:08x}", dc as u32);
+        self.window.update_with_buffer(&self.back_buffer).expect("Couldn't swap buffers");
+        TRUE
     }
 
     fn vertex_pointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
@@ -1146,5 +1164,5 @@ pub extern "stdcall" fn wglMakeCurrent(_dc: HDC, _rc: HGLRC) -> BOOL {
 }
 
 extern "stdcall" fn swap_buffers(dc: HDC) -> BOOL {
-    panic!("WE AIN'T SWAPPIN' SHIT!!! dc: 0x{:08x}", dc as u32);
+    context().swap_buffers(dc)
 }
