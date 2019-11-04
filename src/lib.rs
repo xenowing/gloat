@@ -55,6 +55,9 @@ type GLvoid = c_void;
 
 const GL_NO_ERROR: GLenum = 0;
 
+const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x00000100;
+const GL_COLOR_BUFFER_BIT: GLbitfield = 0x00004000;
+
 const GL_UNPACK_SWAP_BYTES: GLenum = 0x0cf0;
 const GL_UNPACK_LSB_FIRST: GLenum = 0x0cf1;
 const GL_UNPACK_ROW_LENGTH: GLenum = 0x0cf2;
@@ -210,6 +213,7 @@ impl Drop for PatchedFunction {
 struct Context {
     window: Window,
     back_buffer: Vec<u32>,
+    depth_buffer: Vec<f32>,
 
     _swap_buffers: PatchedFunction,
 
@@ -246,6 +250,7 @@ impl Context {
         Context {
             window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions::default()).expect("Could not create output window"),
             back_buffer: vec![0; WIDTH * HEIGHT],
+            depth_buffer: vec![0.0; WIDTH * HEIGHT],
 
             _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
 
@@ -324,7 +329,21 @@ impl Context {
                 }
             }
             Command::Clear { mask } => {
-                // TODO
+                if (mask & GL_DEPTH_BUFFER_BIT) != 0 {
+                    for depth in self.depth_buffer.iter_mut() {
+                        *depth = 1.0;
+                    }
+                }
+                if (mask & GL_COLOR_BUFFER_BIT) != 0 {
+                    let clear_value =
+                        (((self.clear_color_alpha * 255.0) as u32) << 24) |
+                        (((self.clear_color_red * 255.0) as u32) << 16) |
+                        (((self.clear_color_green * 255.0) as u32) << 8) |
+                        (((self.clear_color_blue * 255.0) as u32) << 0);
+                    for pixel in self.back_buffer.iter_mut() {
+                        *pixel = clear_value;
+                    }
+                }
                 println!("Clear: mask: 0x{:08x}", mask);
             }
             Command::ClearColor { red, green, blue, alpha } => {
@@ -374,7 +393,7 @@ impl Context {
             }
             Command::MultiTexCoord2fARB { target, s, t } => {
                 // TODO
-                println!("Ortho: target: 0x{:08x}, s: {}, t: {}", target, s, t);
+                println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
             }
             Command::MultMatrixd { _m } => {
                 // TODO
