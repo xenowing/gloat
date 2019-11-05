@@ -278,7 +278,7 @@ impl Context {
         Context {
             window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions::default()).expect("Could not create output window"),
             back_buffer: vec![0; WIDTH * HEIGHT],
-            depth_buffer: vec![0.0; WIDTH * HEIGHT],
+            depth_buffer: vec![1.0; WIDTH * HEIGHT],
 
             _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
 
