@@ -93,22 +93,22 @@ impl<'a, 'b> Mul<&'a Matrix> for &'b Matrix {
     fn mul(self, other: &'a Matrix) -> Matrix {
         Matrix {
             values: [
-                (self.values[00] * other.values[0]) + (self.values[01] * other.values[04]) + (self.values[02] * other.values[08]) + (self.values[03] * other.values[12]),
-                (self.values[00] * other.values[1]) + (self.values[01] * other.values[05]) + (self.values[02] * other.values[09]) + (self.values[03] * other.values[13]),
-                (self.values[00] * other.values[2]) + (self.values[01] * other.values[06]) + (self.values[02] * other.values[10]) + (self.values[03] * other.values[14]),
-                (self.values[00] * other.values[3]) + (self.values[01] * other.values[07]) + (self.values[02] * other.values[11]) + (self.values[03] * other.values[15]),
-                (self.values[04] * other.values[0]) + (self.values[05] * other.values[04]) + (self.values[06] * other.values[08]) + (self.values[07] * other.values[12]),
-                (self.values[04] * other.values[1]) + (self.values[05] * other.values[05]) + (self.values[06] * other.values[09]) + (self.values[07] * other.values[13]),
-                (self.values[04] * other.values[2]) + (self.values[05] * other.values[06]) + (self.values[06] * other.values[10]) + (self.values[07] * other.values[14]),
-                (self.values[04] * other.values[3]) + (self.values[05] * other.values[07]) + (self.values[06] * other.values[11]) + (self.values[07] * other.values[15]),
-                (self.values[08] * other.values[0]) + (self.values[09] * other.values[04]) + (self.values[10] * other.values[08]) + (self.values[11] * other.values[12]),
-                (self.values[08] * other.values[1]) + (self.values[09] * other.values[05]) + (self.values[10] * other.values[09]) + (self.values[11] * other.values[13]),
-                (self.values[08] * other.values[2]) + (self.values[09] * other.values[06]) + (self.values[10] * other.values[10]) + (self.values[11] * other.values[14]),
-                (self.values[08] * other.values[3]) + (self.values[09] * other.values[07]) + (self.values[10] * other.values[11]) + (self.values[11] * other.values[15]),
-                (self.values[12] * other.values[0]) + (self.values[13] * other.values[04]) + (self.values[14] * other.values[08]) + (self.values[15] * other.values[12]),
-                (self.values[12] * other.values[1]) + (self.values[13] * other.values[05]) + (self.values[14] * other.values[09]) + (self.values[15] * other.values[13]),
-                (self.values[12] * other.values[2]) + (self.values[13] * other.values[06]) + (self.values[14] * other.values[10]) + (self.values[15] * other.values[14]),
-                (self.values[12] * other.values[3]) + (self.values[13] * other.values[07]) + (self.values[14] * other.values[11]) + (self.values[15] * other.values[15])]
+                (self.values[00] * other.values[00]) + (self.values[04] * other.values[01]) + (self.values[08] * other.values[02]) + (self.values[12] * other.values[03]),
+                (self.values[01] * other.values[00]) + (self.values[05] * other.values[01]) + (self.values[09] * other.values[02]) + (self.values[13] * other.values[03]),
+                (self.values[02] * other.values[00]) + (self.values[06] * other.values[01]) + (self.values[10] * other.values[02]) + (self.values[14] * other.values[03]),
+                (self.values[03] * other.values[00]) + (self.values[07] * other.values[01]) + (self.values[11] * other.values[02]) + (self.values[15] * other.values[03]),
+                (self.values[00] * other.values[04]) + (self.values[04] * other.values[05]) + (self.values[08] * other.values[06]) + (self.values[12] * other.values[07]),
+                (self.values[01] * other.values[04]) + (self.values[05] * other.values[05]) + (self.values[09] * other.values[06]) + (self.values[13] * other.values[07]),
+                (self.values[02] * other.values[04]) + (self.values[06] * other.values[05]) + (self.values[10] * other.values[06]) + (self.values[14] * other.values[07]),
+                (self.values[03] * other.values[04]) + (self.values[07] * other.values[05]) + (self.values[11] * other.values[06]) + (self.values[15] * other.values[07]),
+                (self.values[00] * other.values[08]) + (self.values[04] * other.values[09]) + (self.values[08] * other.values[10]) + (self.values[12] * other.values[11]),
+                (self.values[01] * other.values[08]) + (self.values[05] * other.values[09]) + (self.values[09] * other.values[10]) + (self.values[13] * other.values[11]),
+                (self.values[02] * other.values[08]) + (self.values[06] * other.values[09]) + (self.values[10] * other.values[10]) + (self.values[14] * other.values[11]),
+                (self.values[03] * other.values[08]) + (self.values[07] * other.values[09]) + (self.values[11] * other.values[10]) + (self.values[15] * other.values[11]),
+                (self.values[00] * other.values[12]) + (self.values[04] * other.values[13]) + (self.values[08] * other.values[14]) + (self.values[12] * other.values[15]),
+                (self.values[01] * other.values[12]) + (self.values[05] * other.values[13]) + (self.values[09] * other.values[14]) + (self.values[13] * other.values[15]),
+                (self.values[02] * other.values[12]) + (self.values[06] * other.values[13]) + (self.values[10] * other.values[14]) + (self.values[14] * other.values[15]),
+                (self.values[03] * other.values[12]) + (self.values[07] * other.values[13]) + (self.values[11] * other.values[14]) + (self.values[15] * other.values[15])]
         }
     }
 }

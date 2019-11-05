@@ -346,7 +346,7 @@ impl Context {
     }
 
     fn multiply_current_matrix(&mut self, m: Matrix) {
-        self.set_current_matrix(m * self.current_matrix());
+        self.set_current_matrix(self.current_matrix() * m);
     }
 
     fn array_element(&mut self, index: GLint) {
