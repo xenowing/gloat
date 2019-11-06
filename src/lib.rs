@@ -10,6 +10,7 @@ use matrix::*;
 use vec4::*;
 
 use std::cell::RefCell;
+use std::cmp::{max, min};
 use std::ffi::{CStr, c_void};
 use std::ptr;
 use std::rc::Rc;
@@ -62,6 +63,9 @@ type GLdouble = f64;
 type GLvoid = c_void;
 
 const GL_NO_ERROR: GLenum = 0;
+
+const GL_TRIANGLES: GLenum = 0x0004;
+const GL_QUADS: GLenum = 0x0007;
 
 const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x00000100;
 const GL_COLOR_BUFFER_BIT: GLbitfield = 0x00004000;
@@ -136,6 +140,18 @@ impl Texture {
     }
 }
 
+#[derive(Clone, Copy)]
+enum PrimitiveMode {
+    Triangles,
+    Quads,
+}
+
+#[derive(Clone, Copy)]
+struct AssembledVertex {
+    position: Vec4,
+    normal: [GLfloat; 3],
+}
+
 enum Command {
     ActiveTextureARB { texture: GLenum },
     Begin { mode: GLenum },
@@ -156,6 +172,7 @@ enum Command {
     MultiTexCoord2fARB { target: GLenum, s: GLfloat, t: GLfloat },
     MultMatrixd { m: [GLdouble; 16] },
     MultMatrixf { m: [GLfloat; 16] },
+    Normal3f { nx: GLfloat, ny: GLfloat, nz: GLfloat },
     Normal3fv { v: [GLfloat; 3] },
     Ortho { left: GLdouble, right: GLdouble, bottom: GLdouble, top: GLdouble, zNear: GLdouble, zFar: GLdouble },
     PolygonMode { face: GLenum, mode: GLenum },
@@ -246,6 +263,12 @@ struct Context {
     textures: Vec<Texture>,
     texture_2d: GLuint,
 
+    primitive_mode: Option<PrimitiveMode>,
+
+    current_normal: [GLfloat; 3],
+
+    assembled_verts: Vec<AssembledVertex>,
+
     unpack_swap_bytes: GLint,
     unpack_lsb_first: GLint,
     unpack_row_length: GLint,
@@ -266,6 +289,9 @@ struct Context {
     vertex_stride: GLsizei,
 
     normal_array_enabled: bool,
+    normal_pointer: *const GLvoid,
+    normal_type: GLenum,
+    normal_stride: GLsizei,
 
     viewport_x: GLint,
     viewport_y: GLint,
@@ -299,6 +325,12 @@ impl Context {
             textures: Vec::new(),
             texture_2d: 0,
 
+            primitive_mode: None,
+
+            current_normal: [0.0; 3],
+
+            assembled_verts: Vec::new(),
+
             unpack_swap_bytes: 0,
             unpack_lsb_first: 0,
             unpack_row_length: 0,
@@ -313,6 +345,9 @@ impl Context {
             pack_alignment: 4,
 
             normal_array_enabled: false,
+            normal_pointer: ptr::null(),
+            normal_type: 0,
+            normal_stride: 0,
 
             vertex_array_enabled: false,
             vertex_pointer: ptr::null(),
@@ -351,10 +386,18 @@ impl Context {
 
     fn array_element(&mut self, index: GLint) {
         if self.normal_array_enabled {
-            // TODO
+            // TODO: Properly handle type, stride
+            let normal_buffer = self.normal_pointer as *const GLfloat;
+            unsafe {
+                let normal = normal_buffer.add((index * 3) as usize);
+                let nx = *normal.add(0);
+                let ny = *normal.add(1);
+                let nz = *normal.add(2);
+                self.issue(Command::Normal3f { nx, ny, nz });
+            }
         }
         if self.vertex_array_enabled {
-            // TODO: Properly handle type, stride
+            // TODO: Properly handle size, type, stride
             let vertex_buffer = self.vertex_pointer as *const GLfloat;
             unsafe {
                 let vertex = vertex_buffer.add((index * self.vertex_size) as usize);
@@ -362,6 +405,26 @@ impl Context {
                 let y = *vertex.add(1);
                 let z = *vertex.add(2);
                 self.issue(Command::Vertex3f { x, y, z });
+            }
+        }
+    }
+
+    fn assemble_triangle(&mut self, verts: [AssembledVertex; 3]) {
+        // TODO: Clipping, culling, ...
+        for vert in verts.iter() {
+            let color_red = min(max(((vert.normal[0] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
+            let color_green = min(max(((vert.normal[1] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
+            let color_blue = min(max(((vert.normal[2] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
+            let color_alpha = 255;
+            let color = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
+            let ndc = vert.position;
+            if ndc.x() >= -1.0 && ndc.x() <= 1.0 && ndc.y() >= -1.0 && ndc.y() <= 1.0 && ndc.z() >= -1.0 && ndc.z() <= 1.0 {
+                let window_x = ((ndc.x() + 1.0) * (self.viewport_width as f32) / 2.0 + (self.viewport_x as f32)) as usize;
+                let window_y = ((ndc.y() + 1.0) * (self.viewport_height as f32) / 2.0 + (self.viewport_y as f32)) as usize;
+                //println!("****** {}, {}", window_x, window_y);
+                if window_x < WIDTH && window_y < HEIGHT {
+                    self.back_buffer[(HEIGHT - 1 - window_y) * WIDTH + window_x] = color;
+                }
             }
         }
     }
@@ -401,8 +464,14 @@ impl Context {
                 println!("ActiveTextureARB: texture: 0x{:08x}", texture);
             }
             Command::Begin { mode } => {
-                // TODO
-                println!("Begin: mode: 0x{:08x}", mode);
+                if self.primitive_mode.is_some() {
+                    panic!("glBegin called twice with no glEnd call");
+                }
+                self.primitive_mode = Some(match mode {
+                    GL_TRIANGLES => PrimitiveMode::Triangles,
+                    GL_QUADS => PrimitiveMode::Quads,
+                    _ => panic!("glBegin called with invalid mode: 0x{:08x}", mode)
+                });
             }
             Command::BindTexture { target, texture } => {
                 match target {
@@ -467,8 +536,37 @@ impl Context {
                 println!("Enable: cap: 0x{:08x}", cap);
             }
             Command::End => {
-                // TODO
-                println!("End");
+                if let Some(primitive_mode) = self.primitive_mode {
+                    let verts_per_primitive = match primitive_mode {
+                        PrimitiveMode::Triangles => 3,
+                        PrimitiveMode::Quads => 4,
+                    };
+                    if self.assembled_verts.len() % verts_per_primitive != 0 {
+                        panic!("Incorrect number of vertices specified for primitive type");
+                    }
+                    for vert in self.assembled_verts.iter_mut() {
+                        let object = vert.position;
+                        let eye = self.modelview * object;
+                        let clip = self.projection * eye;
+                        let ndc = clip / clip.w();
+                        vert.position = ndc;
+                    }
+                    for i in (0..self.assembled_verts.len()).step_by(verts_per_primitive) {
+                        match primitive_mode {
+                            PrimitiveMode::Triangles => {
+                                self.assemble_triangle([self.assembled_verts[i + 0], self.assembled_verts[i + 1], self.assembled_verts[i + 2]]);
+                            }
+                            PrimitiveMode::Quads => {
+                                self.assemble_triangle([self.assembled_verts[i + 0], self.assembled_verts[i + 1], self.assembled_verts[i + 2]]);
+                                self.assemble_triangle([self.assembled_verts[i + 2], self.assembled_verts[i + 3], self.assembled_verts[i + 0]]);
+                            }
+                        }
+                    }
+                    self.assembled_verts.clear();
+                    self.primitive_mode = None;
+                } else {
+                    panic!("glEnd called with no matching glBegin call");
+                }
             }
             Command::Lightf { light, pname, param } => {
                 // TODO
@@ -494,9 +592,11 @@ impl Context {
             Command::MultMatrixf { m } => {
                 self.multiply_current_matrix(Matrix::from_floats(&m));
             }
+            Command::Normal3f { nx, ny, nz } => {
+                self.current_normal = [nx, ny, nz];
+            }
             Command::Normal3fv { v } => {
-                // TODO
-                //println!("Normal3fv: v: {}, {}, {}", v[0], v[1], v[2]);
+                self.current_normal = v;
             }
             Command::Ortho { left, right, bottom, top, zNear, zFar } => {
                 self.multiply_current_matrix(Matrix::ortho(left as f32, right as f32, bottom as f32, top as f32, zNear as f32, zFar as f32));
@@ -555,20 +655,10 @@ impl Context {
                 self.multiply_current_matrix(Matrix::translation(x as f32, y as f32, z as f32));
             }
             Command::Vertex3f { x, y, z } => {
-                // TODO: Properly build/display primitives!!!
-                let object = Vec4::new(x, y, z, 1.0);
-                let eye = self.modelview * object;
-                let clip = self.projection * eye;
-                //println!("clip: {}, {}, {}, {}", clip.x(), clip.y(), clip.z(), clip.w());
-                let ndc = clip / clip.w();
-                if ndc.x() >= -1.0 && ndc.x() <= 1.0 && ndc.y() >= -1.0 && ndc.y() <= 1.0 && ndc.z() >= -1.0 && ndc.z() <= 1.0 {
-                    let window_x = ((ndc.x() + 1.0) * (self.viewport_width as f32) / 2.0 + (self.viewport_x as f32)) as usize;
-                    let window_y = ((ndc.y() + 1.0) * (self.viewport_height as f32) / 2.0 + (self.viewport_y as f32)) as usize;
-                    //println!("****** {}, {}", window_x, window_y);
-                    if window_x < WIDTH && window_y < HEIGHT {
-                        self.back_buffer[(HEIGHT - 1 - window_y) * WIDTH + window_x] = 0xffffffff;
-                    }
-                }
+                self.assembled_verts.push(AssembledVertex {
+                    position: Vec4::new(x, y, z, 1.0),
+                    normal: self.current_normal,
+                });
             }
             Command::Viewport { x, y, width, height } => {
                 self.viewport_x = x;
@@ -660,8 +750,19 @@ impl Context {
     }
 
     fn normal_pointer(&mut self, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
-        // TODO
-        println!("NormalPointer: type: 0x{:08x}, stride: 0x{:08x}, pointer: 0x{:08x}", type_, stride, pointer as u32);
+        match type_ {
+            GL_FLOAT => {
+                self.normal_type = type_;
+            }
+            _ => panic!("NormalPointer called with invalid type: 0x{:08x}", type_)
+        }
+        match stride {
+            0 => {
+                self.normal_stride = stride;
+            }
+            _ => panic!("NormalPointer called with invalid stride: {}", stride)
+        }
+        self.normal_pointer = pointer;
     }
 
     fn pixel_storei(&mut self, pname: GLenum, param: GLint) {
@@ -1122,8 +1223,8 @@ pub extern "stdcall" fn glNewList(list: GLuint, mode: GLenum) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glNormal3f(_nx: GLfloat, _ny: GLfloat, _nz: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glNormal3f(nx: GLfloat, ny: GLfloat, nz: GLfloat) {
+    context().issue(Command::Normal3f { nx, ny, nz });
 }
 
 #[no_mangle]
