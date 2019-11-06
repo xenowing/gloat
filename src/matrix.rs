@@ -57,7 +57,7 @@ impl Matrix {
             values: [
                 2.0 / (right - left), 0.0, 0.0, 0.0,
                 0.0, 2.0 / (top - bottom), 0.0, 0.0,
-                0.0, 0.0, 0.0, -2.0 / (z_far - z_near),
+                0.0, 0.0, -2.0 / (z_far - z_near), 0.0,
                 tx, ty, tz, 1.0]
         }
     }
