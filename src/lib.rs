@@ -2,11 +2,13 @@
 #![feature(stdarch)]
 
 mod matrix;
+mod vec2;
 mod vec4;
 
 use minifb::{Window, WindowOptions};
 
 use matrix::*;
+use vec2::*;
 use vec4::*;
 
 use std::cell::RefCell;
@@ -150,6 +152,7 @@ enum PrimitiveMode {
 struct AssembledVertex {
     position: Vec4,
     normal: [GLfloat; 3],
+    viewport: Vec2,
 }
 
 enum Command {
@@ -412,18 +415,58 @@ impl Context {
     fn assemble_triangle(&mut self, verts: [AssembledVertex; 3]) {
         // TODO: Clipping, culling, ...
         for vert in verts.iter() {
-            let color_red = min(max(((vert.normal[0] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
-            let color_green = min(max(((vert.normal[1] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
-            let color_blue = min(max(((vert.normal[2] * 0.5 + 0.5) * 255.0) as GLint, 0), 255);
-            let color_alpha = 255;
-            let color = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
-            let ndc = vert.position;
-            if ndc.x() >= -1.0 && ndc.x() <= 1.0 && ndc.y() >= -1.0 && ndc.y() <= 1.0 && ndc.z() >= -1.0 && ndc.z() <= 1.0 {
-                let window_x = ((ndc.x() + 1.0) * (self.viewport_width as f32) / 2.0 + (self.viewport_x as f32)) as usize;
-                let window_y = ((ndc.y() + 1.0) * (self.viewport_height as f32) / 2.0 + (self.viewport_y as f32)) as usize;
-                //println!("****** {}, {}", window_x, window_y);
-                if window_x < WIDTH && window_y < HEIGHT {
-                    self.back_buffer[(HEIGHT - 1 - window_y) * WIDTH + window_x] = color;
+            if vert.position.z() < -1.0 || vert.position.z() > 1.0 {
+                return;
+            }
+        }
+
+        let color_red = min(max(((verts[0].normal[0] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
+        let color_green = min(max(((verts[0].normal[1] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
+        let color_blue = min(max(((verts[0].normal[2] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
+        let color_alpha = 255;
+
+        let mut bb_min = verts[0].viewport;
+        let mut bb_max = verts[0].viewport;
+        for i in 1..verts.len() {
+            bb_min = bb_min.min(verts[i].viewport);
+            bb_max = bb_max.max(verts[i].viewport);
+        }
+        bb_min = bb_min.max(Vec2::new(self.viewport_x as f32, self.viewport_y as f32));
+        bb_max = bb_max.min(Vec2::new((self.viewport_x + self.viewport_width as i32 - 1) as f32, (self.viewport_y + self.viewport_height as i32 - 1) as f32));
+        let bb_min_x = bb_min.x().floor() as i32;
+        let bb_min_y = bb_min.y().floor() as i32;
+        let bb_max_x = bb_max.x().ceil() as i32;
+        let bb_max_y = bb_max.y().ceil() as i32;
+
+        let v0 = verts[0].viewport;
+        let v1 = verts[1].viewport;
+        let v2 = verts[2].viewport;
+
+        for y in bb_min_y..bb_max_y + 1 {
+            for x in bb_min_x..bb_max_x + 1 {
+                let uv = Vec2::new(x as f32, y as f32);
+
+                fn edge(uv: Vec2, a: Vec2, b: Vec2) -> f32 {
+                    let p = a;
+                    let d = b - a;
+                    (uv.x() - p.x()) * d.y() - (uv.y() - p.y()) * d.x()
+                }
+
+                let e01 = edge(uv, v0, v1);
+                let e12 = edge(uv, v1, v2);
+                let e20 = edge(uv, v2, v0);
+
+                let inside = e01 <= 0.0 && e12 <= 0.0 && e20 <= 0.0;
+                if inside {
+                    let back_buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
+                    let back_buffer_color = self.back_buffer[back_buffer_index] as i32;
+                    let back_buffer_red = (back_buffer_color >> 16) & 0xff;
+                    let back_buffer_green = (back_buffer_color >> 8) & 0xff;
+                    let back_buffer_blue = (back_buffer_color >> 0) & 0xff;
+                    let color_red = (color_red + back_buffer_red) / 2;
+                    let color_green = (color_green + back_buffer_green) / 2;
+                    let color_blue = (color_blue + back_buffer_blue) / 2;
+                    self.back_buffer[back_buffer_index] = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
                 }
             }
         }
@@ -550,6 +593,9 @@ impl Context {
                         let clip = self.projection * eye;
                         let ndc = clip / clip.w();
                         vert.position = ndc;
+                        let viewport_offet = Vec2::new(self.viewport_x as f32, self.viewport_y as f32);
+                        let viewport_size = Vec2::new(self.viewport_width as f32, self.viewport_height as f32);
+                        vert.viewport = (Vec2::new(ndc.x(), ndc.y()) + 1.0) * viewport_size / 2.0 + viewport_offet;
                     }
                     for i in (0..self.assembled_verts.len()).step_by(verts_per_primitive) {
                         match primitive_mode {
@@ -658,6 +704,7 @@ impl Context {
                 self.assembled_verts.push(AssembledVertex {
                     position: Vec4::new(x, y, z, 1.0),
                     normal: self.current_normal,
+                    viewport: Vec2::zero(),
                 });
             }
             Command::Viewport { x, y, width, height } => {
