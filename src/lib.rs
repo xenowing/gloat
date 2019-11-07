@@ -433,6 +433,8 @@ impl Context {
         }
         bb_min = bb_min.max(Vec2::new(self.viewport_x as f32, self.viewport_y as f32));
         bb_max = bb_max.min(Vec2::new((self.viewport_x + self.viewport_width as i32 - 1) as f32, (self.viewport_y + self.viewport_height as i32 - 1) as f32));
+        bb_min = bb_min.max(Vec2::zero());
+        bb_max = bb_max.min(Vec2::new((WIDTH - 1) as f32, (HEIGHT - 1) as f32));
         let bb_min_x = bb_min.x().floor() as i32;
         let bb_min_y = bb_min.y().floor() as i32;
         let bb_max_x = bb_max.x().ceil() as i32;
