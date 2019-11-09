@@ -552,8 +552,8 @@ impl Context {
                             let v = fragment_tex_coord.y() * texture.height as f32 - 0.5;
                             let u_floor = u.floor() as usize;
                             let v_floor = v.floor() as usize;
-                            let u_fract = u.fract();
-                            let v_fract = v.fract();
+                            let u_fract = u - u.floor();
+                            let v_fract = v - v.floor();
                             fn fetch_texel(texture: &Texture, u: usize, v: usize) -> Vec4 {
                                 let u = u & (texture.width - 1);
                                 let v = v & (texture.height - 1);
