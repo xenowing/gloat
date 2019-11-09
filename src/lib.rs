@@ -440,6 +440,7 @@ impl Context {
         let color_green = min(max(((verts[0].normal[1] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
         let color_blue = min(max(((verts[0].normal[2] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
         let color_alpha = 255;
+        let color = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
 
         let mut bb_min = Vec2::new(vert_viewports[0].x(), vert_viewports[0].y());
         let mut bb_max = bb_min;
@@ -459,6 +460,11 @@ impl Context {
         fn orient2d(a: Vec2, b: Vec2, c: Vec2) -> f32 {
             (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
         }
+
+        let area = orient2d(
+            Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()),
+            Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()),
+            Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()));
 
         let p = Vec2::new(bb_min_x as f32 + 0.5, bb_min_y as f32 + 0.5);
         let w0_min = orient2d(Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), p);
@@ -483,15 +489,17 @@ impl Context {
 
             for x in bb_min_x..bb_max_x + 1 {
                 if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                    let back_buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
-                    let back_buffer_color = self.back_buffer[back_buffer_index] as i32;
-                    let back_buffer_red = (back_buffer_color >> 16) & 0xff;
-                    let back_buffer_green = (back_buffer_color >> 8) & 0xff;
-                    let back_buffer_blue = (back_buffer_color >> 0) & 0xff;
-                    let color_red = (color_red + back_buffer_red) / 2;
-                    let color_green = (color_green + back_buffer_green) / 2;
-                    let color_blue = (color_blue + back_buffer_blue) / 2;
-                    self.back_buffer[back_buffer_index] = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
+                    let l0 = w0 / area;
+                    let l1 = w1 / area;
+                    let l2 = w2 / area;
+
+                    let fragment_depth = l0 * vert_viewports[0].z() + l1 * vert_viewports[1].z() + l2 * vert_viewports[2].z();
+
+                    let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
+                    if fragment_depth < self.depth_buffer[buffer_index] {
+                        self.back_buffer[buffer_index] = color;
+                        self.depth_buffer[buffer_index] = fragment_depth;
+                    }
                 }
 
                 w0 += w0_dx;
