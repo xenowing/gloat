@@ -451,7 +451,7 @@ impl Context {
 
         for y in bb_min_y..bb_max_y + 1 {
             for x in bb_min_x..bb_max_x + 1 {
-                let p = Vec2::new(x as f32, y as f32);
+                let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
 
                 fn orient2d(a: Vec2, b: Vec2, c: Vec2) -> f32 {
                     (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
