@@ -451,19 +451,17 @@ impl Context {
 
         for y in bb_min_y..bb_max_y + 1 {
             for x in bb_min_x..bb_max_x + 1 {
-                let uv = Vec2::new(x as f32, y as f32);
+                let p = Vec2::new(x as f32, y as f32);
 
-                fn edge(uv: Vec2, a: Vec2, b: Vec2) -> f32 {
-                    let p = a;
-                    let d = b - a;
-                    (uv.y() - p.y()) * d.x() - (uv.x() - p.x()) * d.y()
+                fn orient2d(a: Vec2, b: Vec2, c: Vec2) -> f32 {
+                    (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
                 }
 
-                let e01 = edge(uv, vert_viewports[0], vert_viewports[1]);
-                let e12 = edge(uv, vert_viewports[1], vert_viewports[2]);
-                let e20 = edge(uv, vert_viewports[2], vert_viewports[0]);
+                let w0 = orient2d(vert_viewports[1], vert_viewports[2], p);
+                let w1 = orient2d(vert_viewports[2], vert_viewports[0], p);
+                let w2 = orient2d(vert_viewports[0], vert_viewports[1], p);
 
-                let inside = e01 >= 0.0 && e12 >= 0.0 && e20 >= 0.0;
+                let inside = w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0;
                 if inside {
                     let back_buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     let back_buffer_color = self.back_buffer[back_buffer_index] as i32;
