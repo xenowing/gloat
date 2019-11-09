@@ -773,7 +773,7 @@ impl Context {
             }
             Command::PolygonMode { face, mode } => {
                 // TODO
-                println!("Enable: face: 0x{:08x}, mode: 0x{:08x}", face, mode);
+                println!("PolygonMode: face: 0x{:08x}, mode: 0x{:08x}", face, mode);
             }
             Command::PopMatrix => {
                 let m = self.matrix_stack.pop().expect("Matrix stack underflow");
