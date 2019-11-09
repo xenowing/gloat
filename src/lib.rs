@@ -6,7 +6,7 @@ mod vec2;
 mod vec3;
 mod vec4;
 
-use minifb::{Window, WindowOptions};
+use minifb::{Key, Window, WindowOptions};
 
 use matrix::*;
 use vec2::*;
@@ -14,7 +14,6 @@ use vec3::*;
 use vec4::*;
 
 use std::cell::RefCell;
-use std::cmp::{max, min};
 use std::ffi::{CStr, c_void};
 use std::ptr;
 use std::rc::Rc;
@@ -105,10 +104,15 @@ const GL_TEXTURE_2D: GLenum = 0x0de1;
 const GL_COMPILE: GLenum = 0x1300;
 const GL_COMPILE_AND_EXECUTE: GLenum = 0x1301;
 
+const GL_UNSIGNED_BYTE: GLenum = 0x1401;
+const GL_UNSIGNED_SHORT: GLenum = 0x1403;
 const GL_FLOAT: GLenum = 0x1406;
 
 const GL_MODELVIEW: GLenum = 0x1700;
 const GL_PROJECTION: GLenum = 0x1701;
+
+const GL_RGB: GLenum = 0x1907;
+const GL_RGBA: GLenum = 0x1908;
 
 const GL_LINEAR: GLint = 0x2601;
 const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
@@ -981,6 +985,77 @@ impl Context {
         TRUE
     }
 
+    fn tex_image_2d(&mut self, target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type_: GLenum, data: *const GLvoid) {
+        if target != GL_TEXTURE_2D {
+            panic!("glTexImage2D called with invalid target: 0x{:08x}", target);
+        }
+
+        if level > 0 {
+            println!("Skipping glTexImage2D call with level > 0, level: 0x{:08x}", level);
+            return;
+        }
+
+        if border != 0 {
+            panic!("glTexImage2D called with border != 0, border: 0x{:08x}", border);
+        }
+
+        let num_components = match format {
+            GL_RGB => 3,
+            GL_RGBA => 4,
+            _ => panic!("glTexImage2D called with invalid format: 0x{:08x}", format)
+        };
+
+        println!("TexImage2D: internalformat: 0x{:08x}, width: 0x{:08x}, height: 0x{:08x}, data: 0x{:08x}", internalformat, width, height, data as u32);
+
+        // Load data into temp buffer
+        let mut temp = vec![0; (width * height) as usize];
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let buffer_offset = y * width as usize + x;
+                let color = match type_ {
+                    GL_UNSIGNED_BYTE => {
+                        let data = unsafe { (data as *const u8).add(buffer_offset * num_components) };
+                        let red = unsafe { *data.add(0) } as u32;
+                        let green = unsafe { *data.add(1) } as u32;
+                        let blue = unsafe { *data.add(2) } as u32;
+                        let alpha = if num_components == 4 { unsafe { *data.add(3) } } else { 255 } as u32;
+                        (alpha << 24) | (red << 16) | (green << 8) | (blue << 0)
+                    }
+                    GL_UNSIGNED_SHORT => {
+                        let data = unsafe { (data as *const u16).add(buffer_offset * num_components) };
+                        let red = unsafe { *data.add(0) } as u32 >> 8;
+                        let green = unsafe { *data.add(1) } as u32 >> 8;
+                        let blue = unsafe { *data.add(2) } as u32 >> 8;
+                        let alpha = if num_components == 4 { unsafe { *data.add(3) } } else { 65535 } as u32 >> 8;
+                        (alpha << 24) | (red << 16) | (green << 8) | (blue << 0)
+                    }
+                    _ => panic!("glTexImage2D called with invalid type: 0x{:08x}", type_)
+                };
+                temp[buffer_offset] = color;
+            }
+        }
+
+        // Copy temp buffer to output and display until key is pressed
+        for pixel in self.back_buffer.iter_mut() {
+            *pixel = 0;
+        }
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                if x < WIDTH && y < HEIGHT {
+                    self.back_buffer[y as usize * WIDTH + x as usize] = temp[y * width as usize + x];
+                }
+            }
+        }
+
+        self.window.update_with_buffer(&self.back_buffer).unwrap();
+        while !self.window.is_key_down(Key::Space) {
+            self.window.update();
+        }
+        while self.window.is_key_down(Key::Space) {
+            self.window.update();
+        }
+    }
+
     fn vertex_pointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
         match size {
             3 => {
@@ -1482,8 +1557,7 @@ pub extern "stdcall" fn glTexImage1D(_target: GLenum, _level: GLint, _internalfo
 
 #[no_mangle]
 pub extern "stdcall" fn glTexImage2D(target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type_: GLenum, data: *const GLvoid) {
-    // TODO!
-    println!("TexImage2D: target: 0x{:08x}, level: 0x{:08x}, internalformat: 0x{:08x}, width: 0x{:08x}, height: 0x{:08x}, border: 0x{:08x}, format: 0x{:08x}, type: 0x{:08x}, data: 0x{:08x}", target, level, internalformat, width, height, border, format, type_, data as u32);
+    context().tex_image_2d(target, level, internalformat, width, height, border, format, type_, data);
 }
 
 #[no_mangle]
