@@ -508,12 +508,12 @@ impl Context {
             (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
         }
 
-        let area = orient2d(
+        let scaledArea = orient2d(
             Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()),
             Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()),
             Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()));
 
-        let p = Vec2::new(bb_min_x as f32 + 0.5, bb_min_y as f32 + 0.5);
+        let p = Vec2::new(bb_min_x as f32, bb_min_y as f32) + 0.5; // Offset to sample pixel centers
         let w0_min = orient2d(Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), p);
         let w1_min = orient2d(Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), p);
         let w2_min = orient2d(Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), p);
@@ -536,9 +536,9 @@ impl Context {
 
             for x in bb_min_x..bb_max_x + 1 {
                 if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                    let l0 = w0 / area;
-                    let l1 = w1 / area;
-                    let l2 = w2 / area;
+                    let l0 = w0 / scaledArea;
+                    let l1 = w1 / scaledArea;
+                    let l2 = w2 / scaledArea;
 
                     let fragment_depth = vert_viewports[0].z() * l0 + vert_viewports[1].z() * l1 + vert_viewports[2].z() * l2;
 
@@ -547,17 +547,31 @@ impl Context {
                         let src_color = if self.texture_2d_enable {
                             let fragment_tex_coord = verts[0].tex_coord * l0 + verts[1].tex_coord * l1 + verts[2].tex_coord * l2;
                             let texture = &self.textures[self.texture_2d as usize];
-                            let uv = Vec2::new(fragment_tex_coord.x(), fragment_tex_coord.y()) * Vec2::new(texture.width as f32, texture.height as f32);
-                            let u = (uv.x().floor() as usize) & (texture.width - 1);
-                            let v = (uv.y().floor() as usize) & (texture.height - 1);
-                            // TODO: Proper filtering?
-                            let texel = texture.data[v * texture.width + u];
-                            let texel_red = (texel >> 16) & 0xff;
-                            let texel_green = (texel >> 8) & 0xff;
-                            let texel_blue = (texel >> 0) & 0xff;
-                            let texel_alpha = (texel >> 24) & 0xff;
-                            let texel_color = Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 255.0;
-                            src_color * texel_color
+                            // Offset to sample texel centers
+                            let u = fragment_tex_coord.x() * texture.width as f32 - 0.5;
+                            let v = fragment_tex_coord.y() * texture.height as f32 - 0.5;
+                            let u_floor = u.floor() as usize;
+                            let v_floor = v.floor() as usize;
+                            let u_fract = u.fract();
+                            let v_fract = v.fract();
+                            fn fetch_texel(texture: &Texture, u: usize, v: usize) -> Vec4 {
+                                let u = u & (texture.width - 1);
+                                let v = v & (texture.height - 1);
+                                let texel = texture.data[v * texture.width + u];
+                                let texel_red = (texel >> 16) & 0xff;
+                                let texel_green = (texel >> 8) & 0xff;
+                                let texel_blue = (texel >> 0) & 0xff;
+                                let texel_alpha = (texel >> 24) & 0xff;
+                                Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 255.0
+                            }
+                            let texel_color0 = fetch_texel(texture, u_floor + 0, v_floor + 0);
+                            let texel_color1 = fetch_texel(texture, u_floor + 1, v_floor + 0);
+                            let texel_color2 = fetch_texel(texture, u_floor + 0, v_floor + 1);
+                            let texel_color3 = fetch_texel(texture, u_floor + 1, v_floor + 1);
+                            let a = texel_color0 * (1.0 - u_fract) + texel_color1 * u_fract;
+                            let b = texel_color2 * (1.0 - u_fract) + texel_color3 * u_fract;
+                            let filtered_texel = a * (1.0 - v_fract) + b * v_fract;
+                            src_color * filtered_texel
                         } else {
                             src_color
                         };
@@ -583,11 +597,11 @@ impl Context {
                             src_color
                         };
 
-                        let color = color.min(Vec4::splat(1.0)) * 255.0;
-                        let color_red = color.x() as u32;
-                        let color_green = color.y() as u32;
-                        let color_blue = color.z() as u32;
-                        let color_alpha = color.w() as u32;
+                        let color = color.max(Vec4::zero()).min(Vec4::splat(1.0)) * 255.0;
+                        let color_red = color.x().floor() as u32;
+                        let color_green = color.y().floor() as u32;
+                        let color_blue = color.z().floor() as u32;
+                        let color_alpha = color.w().floor() as u32;
                         self.back_buffer[buffer_index] = (color_alpha << 24) | (color_red << 16) | (color_green << 8) | (color_blue << 0);
 
                         if self.depth_mask {
