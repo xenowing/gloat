@@ -449,20 +449,33 @@ impl Context {
         let bb_max_x = bb_max.x().ceil() as i32;
         let bb_max_y = bb_max.y().ceil() as i32;
 
+        fn orient2d(a: Vec2, b: Vec2, c: Vec2) -> f32 {
+            (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
+        }
+
+        let p = Vec2::new(bb_min_x as f32 + 0.5, bb_min_y as f32 + 0.5);
+        let w0_min = orient2d(vert_viewports[1], vert_viewports[2], p);
+        let w1_min = orient2d(vert_viewports[2], vert_viewports[0], p);
+        let w2_min = orient2d(vert_viewports[0], vert_viewports[1], p);
+
+        let w0_dx = vert_viewports[1].y() - vert_viewports[2].y();
+        let w1_dx = vert_viewports[2].y() - vert_viewports[0].y();
+        let w2_dx = vert_viewports[0].y() - vert_viewports[1].y();
+        let w0_dy = vert_viewports[2].x() - vert_viewports[1].x();
+        let w1_dy = vert_viewports[0].x() - vert_viewports[2].x();
+        let w2_dy = vert_viewports[1].x() - vert_viewports[0].x();
+
+        let mut w0_row = w0_min;
+        let mut w1_row = w1_min;
+        let mut w2_row = w2_min;
+
         for y in bb_min_y..bb_max_y + 1 {
+            let mut w0 = w0_row;
+            let mut w1 = w1_row;
+            let mut w2 = w2_row;
+
             for x in bb_min_x..bb_max_x + 1 {
-                let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
-
-                fn orient2d(a: Vec2, b: Vec2, c: Vec2) -> f32 {
-                    (b.x() - a.x()) * (c.y() - a.y()) - (b.y() - a.y()) * (c.x() - a.x())
-                }
-
-                let w0 = orient2d(vert_viewports[1], vert_viewports[2], p);
-                let w1 = orient2d(vert_viewports[2], vert_viewports[0], p);
-                let w2 = orient2d(vert_viewports[0], vert_viewports[1], p);
-
-                let inside = w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0;
-                if inside {
+                if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
                     let back_buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     let back_buffer_color = self.back_buffer[back_buffer_index] as i32;
                     let back_buffer_red = (back_buffer_color >> 16) & 0xff;
@@ -473,7 +486,15 @@ impl Context {
                     let color_blue = (color_blue + back_buffer_blue) / 2;
                     self.back_buffer[back_buffer_index] = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
                 }
+
+                w0 += w0_dx;
+                w1 += w1_dx;
+                w2 += w2_dx;
             }
+
+            w0_row += w0_dy;
+            w1_row += w1_dy;
+            w2_row += w2_dy;
         }
     }
 
