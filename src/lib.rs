@@ -77,6 +77,8 @@ const GL_QUADS: GLenum = 0x0007;
 const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x00000100;
 const GL_COLOR_BUFFER_BIT: GLbitfield = 0x00004000;
 
+const GL_DEPTH_TEST: GLenum = 0x0b71;
+
 const GL_UNPACK_SWAP_BYTES: GLenum = 0x0cf0;
 const GL_UNPACK_LSB_FIRST: GLenum = 0x0cf1;
 const GL_UNPACK_ROW_LENGTH: GLenum = 0x0cf2;
@@ -259,6 +261,7 @@ struct Context {
     clear_color_blue: GLfloat,
     clear_color_alpha: GLfloat,
 
+    depth_test: bool,
     depth_mask: bool,
 
     display_lists: Vec<Rc<RefCell<DisplayList>>>,
@@ -324,6 +327,7 @@ impl Context {
             clear_color_blue: 0.0,
             clear_color_alpha: 0.0,
 
+            depth_test: false,
             depth_mask: true,
 
             display_lists: Vec::new(),
@@ -503,7 +507,7 @@ impl Context {
                     let fragment_depth = l0 * vert_viewports[0].z() + l1 * vert_viewports[1].z() + l2 * vert_viewports[2].z();
 
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
-                    if fragment_depth < self.depth_buffer[buffer_index] {
+                    if !self.depth_test || fragment_depth < self.depth_buffer[buffer_index] {
                         self.back_buffer[buffer_index] = color;
                         if self.depth_mask {
                             self.depth_buffer[buffer_index] = fragment_depth;
@@ -624,12 +628,20 @@ impl Context {
                 };
             }
             Command::Disable { cap } => {
-                // TODO
-                println!("Disable: cap: 0x{:08x}", cap);
+                match cap {
+                    GL_DEPTH_TEST => {
+                        self.depth_test = false;
+                    }
+                    _ => println!("Disable: cap: 0x{:08x}", cap)
+                }
             }
             Command::Enable { cap } => {
-                // TODO
-                println!("Enable: cap: 0x{:08x}", cap);
+                match cap {
+                    GL_DEPTH_TEST => {
+                        self.depth_test = true;
+                    }
+                    _ => println!("Enable: cap: 0x{:08x}", cap)
+                }
             }
             Command::End => {
                 if let Some(primitive_mode) = self.primitive_mode {
