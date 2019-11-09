@@ -3,12 +3,14 @@
 
 mod matrix;
 mod vec2;
+mod vec3;
 mod vec4;
 
 use minifb::{Window, WindowOptions};
 
 use matrix::*;
 use vec2::*;
+use vec3::*;
 use vec4::*;
 
 use std::cell::RefCell;
@@ -423,13 +425,15 @@ impl Context {
         }
 
         // Viewport transform
-        let mut vert_viewports = [Vec2::zero(); 3];
+        let mut vert_viewports = [Vec3::zero(); 3];
         for i in 0..3 {
             let clip = verts[i].position;
-            let ndc = clip / clip.w();
-            let viewport_offet = Vec2::new(self.viewport_x as f32, self.viewport_y as f32);
-            let viewport_size = Vec2::new(self.viewport_width as f32, self.viewport_height as f32);
-            vert_viewports[i] = (Vec2::new(ndc.x(), ndc.y()) + 1.0) * viewport_size / 2.0 + viewport_offet;
+            let ndc = Vec3::new(clip.x(), clip.y(), clip.z()) / clip.w();
+            let viewport_near = 0.0;
+            let viewport_far = 1.0;
+            let viewport_scale = Vec3::new(self.viewport_width as f32 / 2.0, self.viewport_height as f32 / 2.0, (viewport_far - viewport_near) / 2.0);
+            let viewport_bias = Vec3::new(self.viewport_x as f32 + self.viewport_width as f32 / 2.0, self.viewport_y as f32 + self.viewport_height as f32 / 2.0, (viewport_far + viewport_near) / 2.0);
+            vert_viewports[i] = ndc * viewport_scale + viewport_bias;
         }
 
         let color_red = min(max(((verts[0].normal[0] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
@@ -437,11 +441,11 @@ impl Context {
         let color_blue = min(max(((verts[0].normal[2] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
         let color_alpha = 255;
 
-        let mut bb_min = vert_viewports[0];
-        let mut bb_max = vert_viewports[0];
+        let mut bb_min = Vec2::new(vert_viewports[0].x(), vert_viewports[0].y());
+        let mut bb_max = bb_min;
         for i in 1..verts.len() {
-            bb_min = bb_min.min(vert_viewports[i]);
-            bb_max = bb_max.max(vert_viewports[i]);
+            bb_min = bb_min.min(Vec2::new(vert_viewports[i].x(), vert_viewports[i].y()));
+            bb_max = bb_max.max(Vec2::new(vert_viewports[i].x(), vert_viewports[i].y()));
         }
         bb_min = bb_min.max(Vec2::new(self.viewport_x as f32, self.viewport_y as f32));
         bb_max = bb_max.min(Vec2::new((self.viewport_x + self.viewport_width as i32 - 1) as f32, (self.viewport_y + self.viewport_height as i32 - 1) as f32));
@@ -457,9 +461,9 @@ impl Context {
         }
 
         let p = Vec2::new(bb_min_x as f32 + 0.5, bb_min_y as f32 + 0.5);
-        let w0_min = orient2d(vert_viewports[1], vert_viewports[2], p);
-        let w1_min = orient2d(vert_viewports[2], vert_viewports[0], p);
-        let w2_min = orient2d(vert_viewports[0], vert_viewports[1], p);
+        let w0_min = orient2d(Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), p);
+        let w1_min = orient2d(Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), p);
+        let w2_min = orient2d(Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), p);
 
         let w0_dx = vert_viewports[1].y() - vert_viewports[2].y();
         let w1_dx = vert_viewports[2].y() - vert_viewports[0].y();
