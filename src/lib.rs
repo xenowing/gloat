@@ -415,7 +415,7 @@ impl Context {
     fn assemble_triangle(&mut self, verts: [Vertex; 3]) {
         // TODO: Clipping, culling, ...
         for vert in verts.iter() {
-            if vert.position.z() < -1.0 || vert.position.z() > 1.0 {
+            if vert.position.z() < -vert.position.w() || vert.position.z() > vert.position.w() {
                 return;
             }
         }
@@ -593,8 +593,8 @@ impl Context {
                         let object = vert.position;
                         let eye = self.modelview * object;
                         let clip = self.projection * eye;
+                        vert.position = clip;
                         let ndc = clip / clip.w();
-                        vert.position = ndc;
                         let viewport_offet = Vec2::new(self.viewport_x as f32, self.viewport_y as f32);
                         let viewport_size = Vec2::new(self.viewport_width as f32, self.viewport_height as f32);
                         vert.viewport = (Vec2::new(ndc.x(), ndc.y()) + 1.0) * viewport_size / 2.0 + viewport_offet;
