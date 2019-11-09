@@ -58,6 +58,18 @@ impl Vec4 {
             _mm_cvtss_f32(product)
         }
     }
+
+    pub fn min(self, other: Vec4) -> Vec4 {
+        Vec4 {
+            inner: unsafe { _mm_min_ps(self.inner, other.inner) },
+        }
+    }
+
+    pub fn max(self, other: Vec4) -> Vec4 {
+        Vec4 {
+            inner: unsafe { _mm_max_ps(self.inner, other.inner) },
+        }
+    }
 }
 
 impl Add for Vec4 {

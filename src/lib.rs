@@ -68,6 +68,8 @@ type GLvoid = c_void;
 
 const GL_NO_ERROR: GLenum = 0;
 
+const GL_ONE: GLenum = 1;
+
 const GL_FALSE: GLboolean = 0;
 const GL_TRUE: GLboolean = 1;
 
@@ -77,7 +79,11 @@ const GL_QUADS: GLenum = 0x0007;
 const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x00000100;
 const GL_COLOR_BUFFER_BIT: GLbitfield = 0x00004000;
 
+const GL_SRC_ALPHA: GLenum = 0x0302;
+const GL_ONE_MINUS_SRC_ALPHA: GLenum = 0x0303;
+
 const GL_DEPTH_TEST: GLenum = 0x0b71;
+const GL_BLEND: GLenum = 0xbe2;
 
 const GL_UNPACK_SWAP_BYTES: GLenum = 0x0cf0;
 const GL_UNPACK_LSB_FIRST: GLenum = 0x0cf1;
@@ -112,6 +118,15 @@ const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
 
 const GL_VERTEX_ARRAY: GLenum = 0x8074;
 const GL_NORMAL_ARRAY: GLenum = 0x8075;
+
+enum BlendSrcFactor {
+    SrcAlpha,
+}
+
+enum BlendDstFactor {
+    One,
+    OneMinusSrcAlpha,
+}
 
 struct DisplayList {
     commands: Vec<Command>,
@@ -158,7 +173,8 @@ enum PrimitiveMode {
 #[derive(Clone, Copy)]
 struct Vertex {
     position: Vec4,
-    normal: [GLfloat; 3],
+    normal: Vec3,
+    color: Vec4,
     tex_coord: Vec4,
 }
 
@@ -261,6 +277,10 @@ struct Context {
     clear_color_blue: GLfloat,
     clear_color_alpha: GLfloat,
 
+    blend_enable: bool,
+    blend_src_factor: BlendSrcFactor,
+    blend_dst_factor: BlendDstFactor,
+
     depth_test: bool,
     depth_mask: bool,
 
@@ -278,7 +298,8 @@ struct Context {
 
     primitive_mode: Option<PrimitiveMode>,
 
-    current_normal: [GLfloat; 3],
+    current_normal: Vec3,
+    current_color: Vec4,
     current_tex_coord: Vec4,
 
     verts: Vec<Vertex>,
@@ -327,6 +348,11 @@ impl Context {
             clear_color_blue: 0.0,
             clear_color_alpha: 0.0,
 
+            blend_enable: false,
+            // TODO: I wasn't able to find defaults for these factors, so they may be incorrect
+            blend_src_factor: BlendSrcFactor::SrcAlpha,
+            blend_dst_factor: BlendDstFactor::OneMinusSrcAlpha,
+
             depth_test: false,
             depth_mask: true,
 
@@ -344,7 +370,8 @@ impl Context {
 
             primitive_mode: None,
 
-            current_normal: [0.0; 3],
+            current_normal: Vec3::zero(),
+            current_color: Vec4::new(0.0, 0.0, 0.0, 1.0),
             current_tex_coord: Vec4::new(0.0, 0.0, 0.0, 1.0),
 
             verts: Vec::new(),
@@ -447,11 +474,8 @@ impl Context {
             vert_viewports[i] = ndc * viewport_scale + viewport_bias;
         }
 
-        let color_red = min(max(((verts[0].normal[0] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
-        let color_green = min(max(((verts[0].normal[1] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
-        let color_blue = min(max(((verts[0].normal[2] * 0.5 + 0.5) * 255.0) as i32, 0), 255);
-        let color_alpha = 255;
-        let color = ((color_alpha << 24) | (color_red << 16) | (color_green << 8) | color_blue) as u32;
+        // TODO: Use properly interpolated color (possibly mixed with texture color)
+        let src_color = Vec4::new(verts[0].normal.x() * 0.5 + 0.5, verts[0].normal.y() * 0.5 + 0.5, verts[0].normal.z() * 0.5 + 0.5, verts[0].color.w());//verts[0].color;
 
         let mut bb_min = Vec2::new(vert_viewports[0].x(), vert_viewports[0].y());
         let mut bb_max = bb_min;
@@ -508,7 +532,34 @@ impl Context {
 
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || fragment_depth < self.depth_buffer[buffer_index] {
-                        self.back_buffer[buffer_index] = color;
+                        let color = if self.blend_enable {
+                            let src_scale_factors = match self.blend_src_factor {
+                                BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
+                            };
+
+                            let dst_color = self.back_buffer[buffer_index];
+                            let dst_red = (dst_color >> 16) & 0xff;
+                            let dst_green = (dst_color >> 8) & 0xff;
+                            let dst_blue = (dst_color >> 0) & 0xff;
+                            let dst_alpha = (dst_color >> 24) & 0xff;
+                            let dst_color = Vec4::new(dst_red as f32, dst_green as f32, dst_blue as f32, dst_alpha as f32) / 255.0;
+                            let dst_scale_factors = match self.blend_dst_factor {
+                                BlendDstFactor::One => Vec4::splat(1.0),
+                                BlendDstFactor::OneMinusSrcAlpha => Vec4::splat(1.0 - src_color.w()),
+                            };
+
+                            src_color * src_scale_factors + dst_color * dst_scale_factors
+                        } else {
+                            src_color
+                        };
+
+                        let color = color.min(Vec4::splat(1.0)) * 255.0;
+                        let color_red = color.x() as u32;
+                        let color_green = color.y() as u32;
+                        let color_blue = color.z() as u32;
+                        let color_alpha = color.w() as u32;
+                        self.back_buffer[buffer_index] = (color_alpha << 24) | (color_red << 16) | (color_green << 8) | (color_blue << 0);
+
                         if self.depth_mask {
                             self.depth_buffer[buffer_index] = fragment_depth;
                         }
@@ -579,8 +630,15 @@ impl Context {
                 }
             }
             Command::BlendFunc { sfactor, dfactor } => {
-                // TODO
-                println!("BlendFunc: sfactor: 0x{:08x}, dfactor: 0x{:08x}", sfactor, dfactor);
+                self.blend_src_factor = match sfactor {
+                    GL_SRC_ALPHA => BlendSrcFactor::SrcAlpha,
+                    _ => panic!("glBlendFunc called with invalid sfactor: 0x{:08x}", sfactor)
+                };
+                self.blend_dst_factor = match dfactor {
+                    GL_ONE => BlendDstFactor::One,
+                    GL_ONE_MINUS_SRC_ALPHA => BlendDstFactor::OneMinusSrcAlpha,
+                    _ => panic!("glBlendFunc called with invalid dfactor: 0x{:08x}", dfactor)
+                };
             }
             Command::CallList { list } => {
                 for command in self.display_lists[list as usize].clone().borrow().commands.iter() {
@@ -613,8 +671,7 @@ impl Context {
                 self.clear_color_alpha = alpha;
             }
             Command::Color4f { red, green, blue, alpha } => {
-                // TODO
-                println!("Color4f: red: {}, green: {}, blue: {}, alpha: {}", red, green, blue, alpha);
+                self.current_color = Vec4::new(red, green, blue, alpha);
             }
             Command::CullFace { mode } => {
                 // TODO
@@ -632,6 +689,9 @@ impl Context {
                     GL_DEPTH_TEST => {
                         self.depth_test = false;
                     }
+                    GL_BLEND => {
+                        self.blend_enable = false;
+                    }
                     _ => println!("Disable: cap: 0x{:08x}", cap)
                 }
             }
@@ -639,6 +699,9 @@ impl Context {
                 match cap {
                     GL_DEPTH_TEST => {
                         self.depth_test = true;
+                    }
+                    GL_BLEND => {
+                        self.blend_enable = true;
                     }
                     _ => println!("Enable: cap: 0x{:08x}", cap)
                 }
@@ -700,10 +763,10 @@ impl Context {
                 self.multiply_current_matrix(Matrix::from_floats(&m));
             }
             Command::Normal3f { nx, ny, nz } => {
-                self.current_normal = [nx, ny, nz];
+                self.current_normal = Vec3::new(nx, ny, nz);
             }
             Command::Normal3fv { v } => {
-                self.current_normal = v;
+                self.current_normal = Vec3::new(v[0], v[1], v[2]);
             }
             Command::Ortho { left, right, bottom, top, zNear, zFar } => {
                 self.multiply_current_matrix(Matrix::ortho(left as f32, right as f32, bottom as f32, top as f32, zNear as f32, zFar as f32));
@@ -764,6 +827,7 @@ impl Context {
                 self.verts.push(Vertex {
                     position: Vec4::new(x, y, z, 1.0),
                     normal: self.current_normal,
+                    color: self.current_color,
                     tex_coord: self.current_tex_coord,
                 });
             }
