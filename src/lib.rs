@@ -149,7 +149,7 @@ enum PrimitiveMode {
 }
 
 #[derive(Clone, Copy)]
-struct AssembledVertex {
+struct Vertex {
     position: Vec4,
     normal: [GLfloat; 3],
     viewport: Vec2,
@@ -270,7 +270,7 @@ struct Context {
 
     current_normal: [GLfloat; 3],
 
-    assembled_verts: Vec<AssembledVertex>,
+    verts: Vec<Vertex>,
 
     unpack_swap_bytes: GLint,
     unpack_lsb_first: GLint,
@@ -332,7 +332,7 @@ impl Context {
 
             current_normal: [0.0; 3],
 
-            assembled_verts: Vec::new(),
+            verts: Vec::new(),
 
             unpack_swap_bytes: 0,
             unpack_lsb_first: 0,
@@ -412,7 +412,7 @@ impl Context {
         }
     }
 
-    fn assemble_triangle(&mut self, verts: [AssembledVertex; 3]) {
+    fn assemble_triangle(&mut self, verts: [Vertex; 3]) {
         // TODO: Clipping, culling, ...
         for vert in verts.iter() {
             if vert.position.z() < -1.0 || vert.position.z() > 1.0 {
@@ -586,10 +586,10 @@ impl Context {
                         PrimitiveMode::Triangles => 3,
                         PrimitiveMode::Quads => 4,
                     };
-                    if self.assembled_verts.len() % verts_per_primitive != 0 {
+                    if self.verts.len() % verts_per_primitive != 0 {
                         panic!("Incorrect number of vertices specified for primitive type");
                     }
-                    for vert in self.assembled_verts.iter_mut() {
+                    for vert in self.verts.iter_mut() {
                         let object = vert.position;
                         let eye = self.modelview * object;
                         let clip = self.projection * eye;
@@ -599,18 +599,18 @@ impl Context {
                         let viewport_size = Vec2::new(self.viewport_width as f32, self.viewport_height as f32);
                         vert.viewport = (Vec2::new(ndc.x(), ndc.y()) + 1.0) * viewport_size / 2.0 + viewport_offet;
                     }
-                    for i in (0..self.assembled_verts.len()).step_by(verts_per_primitive) {
+                    for i in (0..self.verts.len()).step_by(verts_per_primitive) {
                         match primitive_mode {
                             PrimitiveMode::Triangles => {
-                                self.assemble_triangle([self.assembled_verts[i + 0], self.assembled_verts[i + 1], self.assembled_verts[i + 2]]);
+                                self.assemble_triangle([self.verts[i + 0], self.verts[i + 1], self.verts[i + 2]]);
                             }
                             PrimitiveMode::Quads => {
-                                self.assemble_triangle([self.assembled_verts[i + 0], self.assembled_verts[i + 1], self.assembled_verts[i + 2]]);
-                                self.assemble_triangle([self.assembled_verts[i + 2], self.assembled_verts[i + 3], self.assembled_verts[i + 0]]);
+                                self.assemble_triangle([self.verts[i + 0], self.verts[i + 1], self.verts[i + 2]]);
+                                self.assemble_triangle([self.verts[i + 2], self.verts[i + 3], self.verts[i + 0]]);
                             }
                         }
                     }
-                    self.assembled_verts.clear();
+                    self.verts.clear();
                     self.primitive_mode = None;
                 } else {
                     panic!("glEnd called with no matching glBegin call");
@@ -703,7 +703,7 @@ impl Context {
                 self.multiply_current_matrix(Matrix::translation(x as f32, y as f32, z as f32));
             }
             Command::Vertex3f { x, y, z } => {
-                self.assembled_verts.push(AssembledVertex {
+                self.verts.push(Vertex {
                     position: Vec4::new(x, y, z, 1.0),
                     normal: self.current_normal,
                     viewport: Vec2::zero(),
