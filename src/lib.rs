@@ -152,6 +152,7 @@ enum PrimitiveMode {
 struct Vertex {
     position: Vec4,
     normal: [GLfloat; 3],
+    tex_coord: Vec4,
 }
 
 enum Command {
@@ -268,6 +269,7 @@ struct Context {
     primitive_mode: Option<PrimitiveMode>,
 
     current_normal: [GLfloat; 3],
+    current_tex_coord: Vec4,
 
     verts: Vec<Vertex>,
 
@@ -330,6 +332,7 @@ impl Context {
             primitive_mode: None,
 
             current_normal: [0.0; 3],
+            current_tex_coord: Vec4::new(0.0, 0.0, 0.0, 1.0),
 
             verts: Vec::new(),
 
@@ -685,8 +688,7 @@ impl Context {
                 println!("ShadeModel: mode: 0x{:08x}", mode);
             }
             Command::TexCoord2f { s, t } => {
-                // TODO
-                println!("TexCoord2f: s: {}, t: {}", s, t);
+                self.current_tex_coord = Vec4::new(s, t, 0.0, 1.0);
             }
             Command::TexGenf { coord, pname, param } => {
                 // TODO
@@ -726,6 +728,7 @@ impl Context {
                 self.verts.push(Vertex {
                     position: Vec4::new(x, y, z, 1.0),
                     normal: self.current_normal,
+                    tex_coord: self.current_tex_coord,
                 });
             }
             Command::Viewport { x, y, width, height } => {
