@@ -68,6 +68,9 @@ type GLvoid = c_void;
 
 const GL_NO_ERROR: GLenum = 0;
 
+const GL_FALSE: GLboolean = 0;
+const GL_TRUE: GLboolean = 1;
+
 const GL_TRIANGLES: GLenum = 0x0004;
 const GL_QUADS: GLenum = 0x0007;
 
@@ -256,6 +259,8 @@ struct Context {
     clear_color_blue: GLfloat,
     clear_color_alpha: GLfloat,
 
+    depth_mask: bool,
+
     display_lists: Vec<Rc<RefCell<DisplayList>>>,
     new_list: Option<GLuint>,
     new_list_mode: GLenum,
@@ -318,6 +323,8 @@ impl Context {
             clear_color_green: 0.0,
             clear_color_blue: 0.0,
             clear_color_alpha: 0.0,
+
+            depth_mask: true,
 
             display_lists: Vec::new(),
             new_list: None,
@@ -498,7 +505,9 @@ impl Context {
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if fragment_depth < self.depth_buffer[buffer_index] {
                         self.back_buffer[buffer_index] = color;
-                        self.depth_buffer[buffer_index] = fragment_depth;
+                        if self.depth_mask {
+                            self.depth_buffer[buffer_index] = fragment_depth;
+                        }
                     }
                 }
 
@@ -608,8 +617,11 @@ impl Context {
                 println!("CullFace: mode: {}", mode);
             }
             Command::DepthMask { flag } => {
-                // TODO
-                println!("DepthMask: flag: {}", flag);
+                self.depth_mask = match flag {
+                    GL_FALSE => false,
+                    GL_TRUE => true,
+                    _ => panic!("glDepthMask called with invalid flag: 0x{:08x}", flag)
+                };
             }
             Command::Disable { cap } => {
                 // TODO
