@@ -451,14 +451,14 @@ impl Context {
                 fn edge(uv: Vec2, a: Vec2, b: Vec2) -> f32 {
                     let p = a;
                     let d = b - a;
-                    (uv.x() - p.x()) * d.y() - (uv.y() - p.y()) * d.x()
+                    (uv.y() - p.y()) * d.x() - (uv.x() - p.x()) * d.y()
                 }
 
                 let e01 = edge(uv, v0, v1);
                 let e12 = edge(uv, v1, v2);
                 let e20 = edge(uv, v2, v0);
 
-                let inside = e01 <= 0.0 && e12 <= 0.0 && e20 <= 0.0;
+                let inside = e01 >= 0.0 && e12 >= 0.0 && e20 >= 0.0;
                 if inside {
                     let back_buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     let back_buffer_color = self.back_buffer[back_buffer_index] as i32;
