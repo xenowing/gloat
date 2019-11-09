@@ -6,7 +6,7 @@ mod vec2;
 mod vec3;
 mod vec4;
 
-use minifb::{Key, Window, WindowOptions};
+use minifb::{Window, WindowOptions};
 
 use matrix::*;
 use vec2::*;
@@ -82,7 +82,7 @@ const GL_SRC_ALPHA: GLenum = 0x0302;
 const GL_ONE_MINUS_SRC_ALPHA: GLenum = 0x0303;
 
 const GL_DEPTH_TEST: GLenum = 0x0b71;
-const GL_BLEND: GLenum = 0xbe2;
+const GL_BLEND: GLenum = 0x0be2;
 
 const GL_UNPACK_SWAP_BYTES: GLenum = 0x0cf0;
 const GL_UNPACK_LSB_FIRST: GLenum = 0x0cf1;
@@ -157,6 +157,9 @@ enum TextureFilter {
 struct Texture {
     mag_filter: TextureFilter,
     min_filter: TextureFilter,
+    width: usize,
+    height: usize,
+    data: Vec<u32>,
 }
 
 impl Texture {
@@ -164,6 +167,9 @@ impl Texture {
         Texture {
             mag_filter: TextureFilter::Linear,
             min_filter: TextureFilter::Linear,
+            width: 0,
+            height: 0,
+            data: Vec::new(),
         }
     }
 }
@@ -299,6 +305,7 @@ struct Context {
 
     textures: Vec<Texture>,
     texture_2d: GLuint,
+    texture_2d_enable: bool,
 
     primitive_mode: Option<PrimitiveMode>,
 
@@ -371,6 +378,7 @@ impl Context {
 
             textures: Vec::new(),
             texture_2d: 0,
+            texture_2d_enable: false,
 
             primitive_mode: None,
 
@@ -478,8 +486,8 @@ impl Context {
             vert_viewports[i] = ndc * viewport_scale + viewport_bias;
         }
 
-        // TODO: Use properly interpolated color (possibly mixed with texture color)
-        let src_color = Vec4::new(verts[0].normal.x() * 0.5 + 0.5, verts[0].normal.y() * 0.5 + 0.5, verts[0].normal.z() * 0.5 + 0.5, verts[0].color.w());//verts[0].color;
+        // TODO: Use properly interpolated color
+        let src_color = verts[0].color;
 
         let mut bb_min = Vec2::new(vert_viewports[0].x(), vert_viewports[0].y());
         let mut bb_max = bb_min;
@@ -532,10 +540,28 @@ impl Context {
                     let l1 = w1 / area;
                     let l2 = w2 / area;
 
-                    let fragment_depth = l0 * vert_viewports[0].z() + l1 * vert_viewports[1].z() + l2 * vert_viewports[2].z();
+                    let fragment_depth = vert_viewports[0].z() * l0 + vert_viewports[1].z() * l1 + vert_viewports[2].z() * l2;
 
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || fragment_depth < self.depth_buffer[buffer_index] {
+                        let src_color = if self.texture_2d_enable {
+                            let fragment_tex_coord = verts[0].tex_coord * l0 + verts[1].tex_coord * l1 + verts[2].tex_coord * l2;
+                            let texture = &self.textures[self.texture_2d as usize];
+                            let uv = Vec2::new(fragment_tex_coord.x(), fragment_tex_coord.y()) * Vec2::new(texture.width as f32, texture.height as f32);
+                            let u = (uv.x().floor() as usize) & (texture.width - 1);
+                            let v = (uv.y().floor() as usize) & (texture.height - 1);
+                            // TODO: Proper filtering?
+                            let texel = texture.data[v * texture.width + u];
+                            let texel_red = (texel >> 16) & 0xff;
+                            let texel_green = (texel >> 8) & 0xff;
+                            let texel_blue = (texel >> 0) & 0xff;
+                            let texel_alpha = (texel >> 24) & 0xff;
+                            let texel_color = Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 255.0;
+                            src_color * texel_color
+                        } else {
+                            src_color
+                        };
+
                         let color = if self.blend_enable {
                             let src_scale_factors = match self.blend_src_factor {
                                 BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
@@ -696,6 +722,9 @@ impl Context {
                     GL_BLEND => {
                         self.blend_enable = false;
                     }
+                    GL_TEXTURE_2D => {
+                        self.texture_2d_enable = false;
+                    }
                     _ => println!("Disable: cap: 0x{:08x}", cap)
                 }
             }
@@ -706,6 +735,9 @@ impl Context {
                     }
                     GL_BLEND => {
                         self.blend_enable = true;
+                    }
+                    GL_TEXTURE_2D => {
+                        self.texture_2d_enable = true;
                     }
                     _ => println!("Enable: cap: 0x{:08x}", cap)
                 }
@@ -759,6 +791,7 @@ impl Context {
             Command::MultiTexCoord2fARB { target, s, t } => {
                 // TODO
                 //println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
+                self.current_tex_coord = Vec4::new(s, t, 0.0, 1.0);
             }
             Command::MultMatrixd { m } => {
                 self.multiply_current_matrix(Matrix::from_doubles(&m));
@@ -1007,14 +1040,17 @@ impl Context {
 
         println!("TexImage2D: internalformat: 0x{:08x}, width: 0x{:08x}, height: 0x{:08x}, data: 0x{:08x}", internalformat, width, height, data as u32);
 
-        // Load data into temp buffer
-        let mut temp = vec![0; (width * height) as usize];
+        let texture = &mut self.textures[self.texture_2d as usize];
+        texture.width = width as usize;
+        texture.height = height as usize;
+        texture.data = vec![0; (width * height) as usize];
+
         for y in 0..height as usize {
             for x in 0..width as usize {
-                let buffer_offset = y * width as usize + x;
+                let buffer_index = y * width as usize + x;
                 let color = match type_ {
                     GL_UNSIGNED_BYTE => {
-                        let data = unsafe { (data as *const u8).add(buffer_offset * num_components) };
+                        let data = unsafe { (data as *const u8).add(buffer_index * num_components) };
                         let red = unsafe { *data.add(0) } as u32;
                         let green = unsafe { *data.add(1) } as u32;
                         let blue = unsafe { *data.add(2) } as u32;
@@ -1022,7 +1058,7 @@ impl Context {
                         (alpha << 24) | (red << 16) | (green << 8) | (blue << 0)
                     }
                     GL_UNSIGNED_SHORT => {
-                        let data = unsafe { (data as *const u16).add(buffer_offset * num_components) };
+                        let data = unsafe { (data as *const u16).add(buffer_index * num_components) };
                         let red = unsafe { *data.add(0) } as u32 >> 8;
                         let green = unsafe { *data.add(1) } as u32 >> 8;
                         let blue = unsafe { *data.add(2) } as u32 >> 8;
@@ -1031,28 +1067,8 @@ impl Context {
                     }
                     _ => panic!("glTexImage2D called with invalid type: 0x{:08x}", type_)
                 };
-                temp[buffer_offset] = color;
+                texture.data[buffer_index] = color;
             }
-        }
-
-        // Copy temp buffer to output and display until key is pressed
-        for pixel in self.back_buffer.iter_mut() {
-            *pixel = 0;
-        }
-        for y in 0..height as usize {
-            for x in 0..width as usize {
-                if x < WIDTH && y < HEIGHT {
-                    self.back_buffer[y as usize * WIDTH + x as usize] = temp[y * width as usize + x];
-                }
-            }
-        }
-
-        self.window.update_with_buffer(&self.back_buffer).unwrap();
-        while !self.window.is_key_down(Key::Space) {
-            self.window.update();
-        }
-        while self.window.is_key_down(Key::Space) {
-            self.window.update();
         }
     }
 
