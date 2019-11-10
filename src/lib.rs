@@ -509,7 +509,7 @@ impl Context {
         }
 
         // Viewport transform
-        let mut vert_viewports = [Vec3::zero(); 3];
+        let mut window_verts = [Vec3::zero(); 3];
         for i in 0..3 {
             let clip = verts[i].position;
             let ndc = Vec3::new(clip.x(), clip.y(), clip.z()) / clip.w();
@@ -517,17 +517,17 @@ impl Context {
             let viewport_far = 1.0;
             let viewport_scale = Vec3::new(self.viewport_width as f32 / 2.0, self.viewport_height as f32 / 2.0, (viewport_far - viewport_near) / 2.0);
             let viewport_bias = Vec3::new(self.viewport_x as f32 + self.viewport_width as f32 / 2.0, self.viewport_y as f32 + self.viewport_height as f32 / 2.0, (viewport_far + viewport_near) / 2.0);
-            vert_viewports[i] = ndc * viewport_scale + viewport_bias;
+            window_verts[i] = ndc * viewport_scale + viewport_bias;
         }
 
         // TODO: Use properly interpolated color
         let src_color = verts[0].color;
 
-        let mut bb_min = Vec2::new(vert_viewports[0].x(), vert_viewports[0].y());
+        let mut bb_min = Vec2::new(window_verts[0].x(), window_verts[0].y());
         let mut bb_max = bb_min;
         for i in 1..verts.len() {
-            bb_min = bb_min.min(Vec2::new(vert_viewports[i].x(), vert_viewports[i].y()));
-            bb_max = bb_max.max(Vec2::new(vert_viewports[i].x(), vert_viewports[i].y()));
+            bb_min = bb_min.min(Vec2::new(window_verts[i].x(), window_verts[i].y()));
+            bb_max = bb_max.max(Vec2::new(window_verts[i].x(), window_verts[i].y()));
         }
         bb_min = bb_min.max(Vec2::new(self.viewport_x as f32, self.viewport_y as f32));
         bb_max = bb_max.min(Vec2::new((self.viewport_x + self.viewport_width as i32 - 1) as f32, (self.viewport_y + self.viewport_height as i32 - 1) as f32));
@@ -543,24 +543,25 @@ impl Context {
         }
 
         let scaled_area = orient2d(
-            Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()),
-            Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()),
-            Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()));
-
-        let w0_dx = (vert_viewports[1].y() - vert_viewports[2].y()) / scaled_area;
-        let w1_dx = (vert_viewports[2].y() - vert_viewports[0].y()) / scaled_area;
-        let w2_dx = (vert_viewports[0].y() - vert_viewports[1].y()) / scaled_area;
-        let w0_dy = (vert_viewports[2].x() - vert_viewports[1].x()) / scaled_area;
-        let w1_dy = (vert_viewports[0].x() - vert_viewports[2].x()) / scaled_area;
-        let w2_dy = (vert_viewports[1].x() - vert_viewports[0].x()) / scaled_area;
+            Vec2::new(window_verts[0].x(), window_verts[0].y()),
+            Vec2::new(window_verts[1].x(), window_verts[1].y()),
+            Vec2::new(window_verts[2].x(), window_verts[2].y()));
 
         let p = Vec2::new(bb_min_x as f32, bb_min_y as f32) + 0.5; // Offset to sample pixel centers
-        let w0_min = orient2d(Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), p) / scaled_area;
-        let w1_min = orient2d(Vec2::new(vert_viewports[2].x(), vert_viewports[2].y()), Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), p) / scaled_area;
-        let w2_min = orient2d(Vec2::new(vert_viewports[0].x(), vert_viewports[0].y()), Vec2::new(vert_viewports[1].x(), vert_viewports[1].y()), p) / scaled_area;
-        let z_min = vert_viewports[0].z() * w0_min + vert_viewports[1].z() * w1_min + vert_viewports[2].z() * w2_min;
-        let z_dx = vert_viewports[0].z() * w0_dx + vert_viewports[1].z() * w1_dx + vert_viewports[2].z() * w2_dx;
-        let z_dy = vert_viewports[0].z() * w0_dy + vert_viewports[1].z() * w1_dy + vert_viewports[2].z() * w2_dy;
+
+        // TODO: Proper top/left fill rule, perspective correction
+        let w0_min = orient2d(Vec2::new(window_verts[1].x(), window_verts[1].y()), Vec2::new(window_verts[2].x(), window_verts[2].y()), p) / scaled_area;
+        let w1_min = orient2d(Vec2::new(window_verts[2].x(), window_verts[2].y()), Vec2::new(window_verts[0].x(), window_verts[0].y()), p) / scaled_area;
+        let w2_min = orient2d(Vec2::new(window_verts[0].x(), window_verts[0].y()), Vec2::new(window_verts[1].x(), window_verts[1].y()), p) / scaled_area;
+        let w0_dx = (window_verts[1].y() - window_verts[2].y()) / scaled_area;
+        let w1_dx = (window_verts[2].y() - window_verts[0].y()) / scaled_area;
+        let w2_dx = (window_verts[0].y() - window_verts[1].y()) / scaled_area;
+        let w0_dy = (window_verts[2].x() - window_verts[1].x()) / scaled_area;
+        let w1_dy = (window_verts[0].x() - window_verts[2].x()) / scaled_area;
+        let w2_dy = (window_verts[1].x() - window_verts[0].x()) / scaled_area;
+        let z_min = window_verts[0].z() * w0_min + window_verts[1].z() * w1_min + window_verts[2].z() * w2_min;
+        let z_dx = window_verts[0].z() * w0_dx + window_verts[1].z() * w1_dx + window_verts[2].z() * w2_dx;
+        let z_dy = window_verts[0].z() * w0_dy + window_verts[1].z() * w1_dy + window_verts[2].z() * w2_dy;
         let s_min = verts[0].tex_coord.x() * w0_min + verts[1].tex_coord.x() * w1_min + verts[2].tex_coord.x() * w2_min;
         let t_min = verts[0].tex_coord.y() * w0_min + verts[1].tex_coord.y() * w1_min + verts[2].tex_coord.y() * w2_min;
         let s_dx = verts[0].tex_coord.x() * w0_dx + verts[1].tex_coord.x() * w1_dx + verts[2].tex_coord.x() * w2_dx;
