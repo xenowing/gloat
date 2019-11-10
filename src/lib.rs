@@ -86,6 +86,7 @@ const GL_QUADS: GLenum = 0x0007;
 const GL_DEPTH_BUFFER_BIT: GLbitfield = 0x00000100;
 const GL_COLOR_BUFFER_BIT: GLbitfield = 0x00004000;
 
+const GL_SRC_COLOR: GLenum = 0x0300;
 const GL_SRC_ALPHA: GLenum = 0x0302;
 const GL_ONE_MINUS_SRC_ALPHA: GLenum = 0x0303;
 
@@ -139,6 +140,7 @@ const GL_NORMAL_ARRAY: GLenum = 0x8075;
 
 enum BlendSrcFactor {
     Zero,
+    SrcColor,
     SrcAlpha,
 }
 
@@ -577,7 +579,7 @@ impl Context {
 
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || fragment_depth < self.depth_buffer[buffer_index] {
-                        let src_color = if self.texture_2d_enable {
+                        let src_color = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
                             let fragment_tex_coord = verts[0].tex_coord * l0 + verts[1].tex_coord * l1 + verts[2].tex_coord * l2;
                             let texture = &self.textures[self.texture_2d as usize];
                             // Offset to sample texel centers
@@ -612,6 +614,7 @@ impl Context {
                         let color = if self.blend_enable {
                             let src_scale_factors = match self.blend_src_factor {
                                 BlendSrcFactor::Zero => Vec4::zero(),
+                                BlendSrcFactor::SrcColor => src_color,
                                 BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
                             };
 
@@ -711,6 +714,7 @@ impl Context {
             Command::BlendFunc { sfactor, dfactor } => {
                 self.blend_src_factor = match sfactor {
                     GL_ZERO => BlendSrcFactor::Zero,
+                    GL_SRC_COLOR => BlendSrcFactor::SrcColor,
                     GL_SRC_ALPHA => BlendSrcFactor::SrcAlpha,
                     _ => panic!("glBlendFunc called with invalid sfactor: 0x{:08x}", sfactor)
                 };
@@ -1762,7 +1766,8 @@ pub extern "stdcall" fn glTexCoordPointer(_size: GLint, _type_: GLenum, _stride:
 
 #[no_mangle]
 pub extern "stdcall" fn glTexEnvf(_target: GLenum, _pname: GLenum, _param: GLfloat) {
-    unimplemented!()
+    // TODO!
+    //unimplemented!()
 }
 
 #[no_mangle]
