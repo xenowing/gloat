@@ -125,6 +125,7 @@ const GL_RGBA: GLenum = 0x1908;
 const GL_NEAREST: GLint = 0x2600;
 const GL_LINEAR: GLint = 0x2601;
 const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
+const GL_LINEAR_MIPMAP_LINEAR: GLint = 0x2703;
 
 const GL_TEXTURE_MAG_FILTER: GLenum = 0x2800;
 const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
@@ -168,6 +169,7 @@ enum TextureFilter {
     Nearest,
     Linear,
     LinearMipmapNearest,
+    LinearMipmapLinear,
 }
 
 struct Texture {
@@ -916,6 +918,9 @@ impl Context {
                                 GL_LINEAR_MIPMAP_NEAREST => {
                                     texture.min_filter = TextureFilter::LinearMipmapNearest;
                                 }
+                                GL_LINEAR_MIPMAP_LINEAR => {
+                                    texture.min_filter = TextureFilter::LinearMipmapLinear;
+                                }
                                 _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MIN_FILTER: 0x{:08x}", param)
                             }
                             GL_TEXTURE_WRAP_S => match param {
@@ -1473,6 +1478,11 @@ pub extern "stdcall" fn glLineWidth(_width: GLfloat) {
 #[no_mangle]
 pub extern "stdcall" fn glLoadIdentity() {
     context().issue(Command::LoadIdentity);
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glLoadMatrixf(_m: *const GLfloat) {
+    unimplemented!()
 }
 
 #[no_mangle]
