@@ -31,9 +31,11 @@ const TRUE: BOOL = 1;
 
 type DWORD = i32;
 type PDWORD = *mut DWORD;
+type LONG = i32;
 
 type HANDLE = LPVOID;
 type HINSTANCE = HANDLE;
+type HWND = HANDLE;
 type HDC = HANDLE;
 type HGLRC = HANDLE;
 
@@ -53,6 +55,11 @@ extern "stdcall" {
     fn SwapBuffers(hdc: HDC) -> BOOL;
 }
 
+#[link(name = "user32")]
+extern "stdcall" {
+    fn ChangeDisplaySettingsExA(lpszDeviceName: LPCSTR, lpDevMode: *const c_void, hwnd: HWND, dwflags: DWORD, lParam: LPVOID) -> LONG;
+}
+
 type GLboolean = i32;
 type GLubyte = u8;
 type GLshort = i16;
@@ -67,6 +74,7 @@ type GLvoid = c_void;
 
 const GL_NO_ERROR: GLenum = 0;
 
+const GL_ZERO: GLenum = 0;
 const GL_ONE: GLenum = 1;
 
 const GL_FALSE: GLboolean = 0;
@@ -114,21 +122,28 @@ const GL_PROJECTION: GLenum = 0x1701;
 const GL_RGB: GLenum = 0x1907;
 const GL_RGBA: GLenum = 0x1908;
 
+const GL_NEAREST: GLint = 0x2600;
 const GL_LINEAR: GLint = 0x2601;
 const GL_LINEAR_MIPMAP_NEAREST: GLint = 0x2701;
 
 const GL_TEXTURE_MAG_FILTER: GLenum = 0x2800;
 const GL_TEXTURE_MIN_FILTER: GLenum = 0x2801;
+const GL_TEXTURE_WRAP_S: GLenum = 0x2802;
+const GL_TEXTURE_WRAP_T: GLenum = 0x2803;
+
+const GL_CLAMP: GLint = 0x2900;
 
 const GL_VERTEX_ARRAY: GLenum = 0x8074;
 const GL_NORMAL_ARRAY: GLenum = 0x8075;
 
 enum BlendSrcFactor {
+    Zero,
     SrcAlpha,
 }
 
 enum BlendDstFactor {
     One,
+    SrcAlpha,
     OneMinusSrcAlpha,
 }
 
@@ -150,6 +165,7 @@ enum MatrixMode {
 }
 
 enum TextureFilter {
+    Nearest,
     Linear,
     LinearMipmapNearest,
 }
@@ -157,6 +173,8 @@ enum TextureFilter {
 struct Texture {
     mag_filter: TextureFilter,
     min_filter: TextureFilter,
+    wrap_s: WrapParameter,
+    wrap_t: WrapParameter,
     width: usize,
     height: usize,
     data: Vec<u32>,
@@ -167,11 +185,18 @@ impl Texture {
         Texture {
             mag_filter: TextureFilter::Linear,
             min_filter: TextureFilter::Linear,
+            wrap_s: WrapParameter::Repeat,
+            wrap_t: WrapParameter::Repeat,
             width: 0,
             height: 0,
             data: Vec::new(),
         }
     }
+}
+
+enum WrapParameter {
+    Clamp,
+    Repeat,
 }
 
 #[derive(Clone, Copy)]
@@ -196,6 +221,7 @@ enum Command {
     CallList { list: GLuint },
     Clear { mask: GLbitfield },
     ClearColor { red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat },
+    Color3f { red: GLfloat, green: GLfloat, blue: GLfloat },
     Color4f { red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat },
     CullFace { mode: GLenum },
     DepthMask { flag: GLboolean },
@@ -214,11 +240,14 @@ enum Command {
     PolygonMode { face: GLenum, mode: GLenum },
     PopMatrix,
     PushMatrix,
+    Rotatef { angle: GLfloat, x: GLfloat, y: GLfloat, z: GLfloat },
     ShadeModel { mode: GLenum },
     TexCoord2f { s: GLfloat, t: GLfloat },
     TexGenf { coord: GLenum, pname: GLenum, param: GLfloat },
+    TexGeni { coord: GLenum, pname: GLenum, param: GLint },
     TexParameteri { target: GLenum, pname: GLenum, param: GLint },
     Translated { x: GLdouble, y: GLdouble, z: GLdouble },
+    Translatef { x: GLfloat, y: GLfloat, z: GLfloat },
     Vertex3f { x: GLfloat, y: GLfloat, z: GLfloat },
     Viewport { x: GLint, y: GLint, width: GLsizei, height: GLsizei },
 }
@@ -281,6 +310,7 @@ struct Context {
     depth_buffer: Vec<f32>,
 
     _swap_buffers: PatchedFunction,
+    _change_display_settings: PatchedFunction,
 
     clear_color_red: GLfloat,
     clear_color_green: GLfloat,
@@ -353,6 +383,7 @@ impl Context {
             depth_buffer: vec![1.0; WIDTH * HEIGHT],
 
             _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
+            _change_display_settings: PatchedFunction::new(ChangeDisplaySettingsExA as _, change_display_settings_ex_a as _),
 
             clear_color_red: 0.0,
             clear_color_green: 0.0,
@@ -578,6 +609,7 @@ impl Context {
 
                         let color = if self.blend_enable {
                             let src_scale_factors = match self.blend_src_factor {
+                                BlendSrcFactor::Zero => Vec4::zero(),
                                 BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
                             };
 
@@ -589,6 +621,7 @@ impl Context {
                             let dst_color = Vec4::new(dst_red as f32, dst_green as f32, dst_blue as f32, dst_alpha as f32) / 255.0;
                             let dst_scale_factors = match self.blend_dst_factor {
                                 BlendDstFactor::One => Vec4::splat(1.0),
+                                BlendDstFactor::SrcAlpha => Vec4::splat(src_color.w()),
                                 BlendDstFactor::OneMinusSrcAlpha => Vec4::splat(1.0 - src_color.w()),
                             };
 
@@ -675,18 +708,24 @@ impl Context {
             }
             Command::BlendFunc { sfactor, dfactor } => {
                 self.blend_src_factor = match sfactor {
+                    GL_ZERO => BlendSrcFactor::Zero,
                     GL_SRC_ALPHA => BlendSrcFactor::SrcAlpha,
                     _ => panic!("glBlendFunc called with invalid sfactor: 0x{:08x}", sfactor)
                 };
                 self.blend_dst_factor = match dfactor {
                     GL_ONE => BlendDstFactor::One,
+                    GL_SRC_ALPHA => BlendDstFactor::SrcAlpha,
                     GL_ONE_MINUS_SRC_ALPHA => BlendDstFactor::OneMinusSrcAlpha,
                     _ => panic!("glBlendFunc called with invalid dfactor: 0x{:08x}", dfactor)
                 };
             }
             Command::CallList { list } => {
-                for command in self.display_lists[list as usize].clone().borrow().commands.iter() {
-                    self.execute(command);
+                if (list as usize) < self.display_lists.len() {
+                    for command in self.display_lists[list as usize].clone().borrow().commands.iter() {
+                        self.execute(command);
+                    }
+                } else {
+                    println!("glCallList called with invalid list: {}", list);
                 }
             }
             Command::Clear { mask } => {
@@ -713,6 +752,9 @@ impl Context {
                 self.clear_color_green = green;
                 self.clear_color_blue = blue;
                 self.clear_color_alpha = alpha;
+            }
+            Command::Color3f { red, green, blue } => {
+                self.current_color = Vec4::new(red, green, blue, 1.0);
             }
             Command::Color4f { red, green, blue, alpha } => {
                 self.current_color = Vec4::new(red, green, blue, alpha);
@@ -833,6 +875,10 @@ impl Context {
             Command::PushMatrix => {
                 self.matrix_stack.push(self.current_matrix());
             }
+            Command::Rotatef { angle, x, y, z } => {
+                // TODO
+                println!("Rotatef: angle: {}, x: {}, y: {}, z: {}", angle, x, y, z);
+            }
             Command::ShadeModel { mode } => {
                 // TODO
                 println!("ShadeModel: mode: 0x{:08x}", mode);
@@ -843,6 +889,10 @@ impl Context {
             Command::TexGenf { coord, pname, param } => {
                 // TODO
                 println!("TexGenf: coord: 0x{:08x}, pname: 0x{:08x}, param: {}", coord, pname, param);
+            }
+            Command::TexGeni { coord, pname, param } => {
+                // TODO
+                println!("TexGeni: coord: 0x{:08x}, pname: 0x{:08x}, param: {}", coord, pname, param);
             }
             Command::TexParameteri { target, pname, param } => {
                 match target {
@@ -857,6 +907,9 @@ impl Context {
                                 _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MAG_FILTER: 0x{:08x}", param)
                             }
                             GL_TEXTURE_MIN_FILTER => match param {
+                                GL_NEAREST => {
+                                    texture.min_filter = TextureFilter::Nearest;
+                                }
                                 GL_LINEAR => {
                                     texture.min_filter = TextureFilter::Linear;
                                 }
@@ -864,6 +917,18 @@ impl Context {
                                     texture.min_filter = TextureFilter::LinearMipmapNearest;
                                 }
                                 _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_MIN_FILTER: 0x{:08x}", param)
+                            }
+                            GL_TEXTURE_WRAP_S => match param {
+                                GL_CLAMP => {
+                                    texture.wrap_s = WrapParameter::Clamp;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_WRAP_S: 0x{:08x}", param)
+                            }
+                            GL_TEXTURE_WRAP_T => match param {
+                                GL_CLAMP => {
+                                    texture.wrap_t = WrapParameter::Clamp;
+                                }
+                                _ => panic!("glTexParameteri called with invalid param for GL_TEXTURE_WRAP_S: 0x{:08x}", param)
                             }
                             _ => panic!("glTexParameteri called with invalid pname: 0x{:08x}", pname)
                         }
@@ -873,6 +938,9 @@ impl Context {
             }
             Command::Translated { x, y, z } => {
                 self.multiply_current_matrix(Matrix::translation(x as f32, y as f32, z as f32));
+            }
+            Command::Translatef { x, y, z } => {
+                self.multiply_current_matrix(Matrix::translation(x, y, z));
             }
             Command::Vertex3f { x, y, z } => {
                 self.verts.push(Vertex {
@@ -994,6 +1062,12 @@ impl Context {
                     self.unpack_swap_bytes = param;
                 }
                 _ => panic!("glPixelStorei called with invalid param for GL_UNPACK_SWAP_BYTES: 0x{:08x}", param)
+            }
+            GL_UNPACK_LSB_FIRST => match param {
+                0 | 1 => {
+                    self.unpack_lsb_first = param;
+                }
+                _ => panic!("glPixelStorei called with invalid param for GL_UNPACK_LSB_FIRST: 0x{:08x}", param)
             }
             GL_UNPACK_ROW_LENGTH => {
                 if param >= 0 {
@@ -1164,6 +1238,11 @@ pub extern "stdcall" fn glBindTexture(target: GLenum, texture: GLuint) {
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glBitmap(_width: GLsizei, _height: GLsizei, _xorig: GLfloat, _yorig: GLfloat, _xmove: GLfloat, _ymove: GLfloat, _bitmap: *const GLubyte) {
+    unimplemented!()
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glBlendFunc(sfactor: GLenum, dfactor: GLenum) {
     context().issue(Command::BlendFunc { sfactor, dfactor });
 }
@@ -1194,8 +1273,8 @@ pub extern "stdcall" fn glClientActiveTextureARB(_texture: GLenum) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glColor3f(_red: GLfloat, _green: GLfloat, _blue: GLfloat) {
-    unimplemented!()
+pub extern "stdcall" fn glColor3f(red: GLfloat, green: GLfloat, blue: GLfloat) {
+    context().issue(Command::Color3f { red, green, blue });
 }
 
 #[no_mangle]
@@ -1204,8 +1283,29 @@ pub extern "stdcall" fn glColor4f(red: GLfloat, green: GLfloat, blue: GLfloat, a
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glColor4fv(_v: *const GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glCopyTexSubImage2D(_target: GLenum, _level: GLint, _xoffset: GLint, _yoffset: GLint, _x: GLint, _y: GLint, _width: GLsizei, _height: GLsizei) {
+    // TODO!
+    //unimplemented!()
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glCullFace(mode: GLenum) {
     context().issue(Command::CullFace { mode });
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glDeleteLists(_list: GLuint, _range: GLsizei) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glDeleteTextures(_n: GLsizei, _textures: *const GLuint) {
+    unimplemented!()
 }
 
 #[no_mangle]
@@ -1226,6 +1326,16 @@ pub extern "stdcall" fn glDisable(cap: GLenum) {
 #[no_mangle]
 pub extern "stdcall" fn glDisableClientState(array: GLenum) {
     context().disable_client_state(array);
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glDrawElements(_mode: GLenum, _count: GLsizei, _type_: GLenum, _indices: *const GLvoid) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glDrawBuffer(_mode: GLenum) {
+    unimplemented!()
 }
 
 #[no_mangle]
@@ -1274,6 +1384,36 @@ pub extern "stdcall" fn glEvalPoint2(_i: GLint, _j: GLint) {
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glFinish() {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glFogf(_pname: GLenum, _param: GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glFogfv(_pname: GLenum, _params: *const GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glFogi(_pname: GLenum, _param: GLint) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glFrontFace(_mode: GLenum) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glFrustum(_left: GLdouble, _right: GLdouble, _bottom: GLdouble, _top: GLdouble, _zNear: GLdouble, _zFar: GLdouble) {
+    unimplemented!()
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glGenLists(range: GLsizei) -> GLuint {
     context().gen_lists(range)
 }
@@ -1316,6 +1456,21 @@ pub extern "stdcall" fn glLightfv(_light: GLenum, _pname: GLenum, _params: *cons
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glLightModelfv(_pname: GLenum, _params: *const GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glLightModeli(_pname: GLenum, _param: GLint) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glLineWidth(_width: GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glLoadIdentity() {
     context().issue(Command::LoadIdentity);
 }
@@ -1337,6 +1492,16 @@ pub extern "stdcall" fn glMapGrid1f(_un: GLint, _u1: GLfloat, _u2: GLfloat) {
 
 #[no_mangle]
 pub extern "stdcall" fn glMapGrid2d(_un: GLint, _u1: GLdouble, _u2: GLdouble, _vn: GLint, _v1: GLdouble, _v2: GLdouble) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glMapGrid2f(_un: GLint, _u1: GLfloat, _u2: GLfloat, _vn: GLint, _v1: GLfloat, _v2: GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glMaterialf(_face: GLenum, _pname: GLenum, _param: GLfloat) {
     unimplemented!()
 }
 
@@ -1551,6 +1716,16 @@ pub extern "stdcall" fn glPushMatrix() {
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glReadBuffer(_mode: GLenum) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glRotatef(angle: GLfloat, x: GLfloat, y: GLfloat, z: GLfloat) {
+    context().issue(Command::Rotatef { angle, x, y, z });
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glScalef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
     unimplemented!()
 }
@@ -1566,13 +1741,33 @@ pub extern "stdcall" fn glTexCoord2f(s: GLfloat, t: GLfloat) {
 }
 
 #[no_mangle]
+pub extern "stdcall" fn glTexCoord2i(_s: GLint, _t: GLint) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glTexCoordPointer(_size: GLint, _type_: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glTexEnvf(_target: GLenum, _pname: GLenum, _param: GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glTexEnvi(_target: GLenum, _pname: GLenum, _param: GLint) {
+    unimplemented!()
+}
+
+#[no_mangle]
 pub extern "stdcall" fn glTexGenf(coord: GLenum, pname: GLenum, param: GLfloat) {
     context().issue(Command::TexGenf { coord, pname, param });
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glTexGeni(_coord: GLenum, _pname: GLenum, _param: GLint) {
-    unimplemented!()
+pub extern "stdcall" fn glTexGeni(coord: GLenum, pname: GLenum, param: GLint) {
+    context().issue(Command::TexGeni { coord, pname, param });
 }
 
 #[no_mangle]
@@ -1596,13 +1791,28 @@ pub extern "stdcall" fn glTranslated(x: GLdouble, y: GLdouble, z: GLdouble) {
 }
 
 #[no_mangle]
-pub extern "stdcall" fn glTranslatef(_x: GLfloat, _y: GLfloat, _z: GLfloat) {
+pub extern "stdcall" fn glTranslatef(x: GLfloat, y: GLfloat, z: GLfloat) {
+    context().issue(Command::Translatef { x, y, z });
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glVertex2f(_x: GLfloat, _y: GLfloat) {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glVertex2i(_x: GLint, _y: GLint) {
     unimplemented!()
 }
 
 #[no_mangle]
 pub extern "stdcall" fn glVertex3f(x: GLfloat, y: GLfloat, z: GLfloat) {
     context().issue(Command::Vertex3f { x, y, z });
+}
+
+#[no_mangle]
+pub extern "stdcall" fn glVertex3fv(_v: *const GLfloat) {
+    unimplemented!()
 }
 
 #[no_mangle]
@@ -1617,13 +1827,24 @@ pub extern "stdcall" fn glViewport(x: GLint, y: GLint, width: GLsizei, height: G
 
 #[no_mangle]
 pub extern "stdcall" fn wglCreateContext(_dc: HDC) -> HGLRC {
-    unimplemented!()
+    // TODO
+    0 as _
 }
 
 #[no_mangle]
 pub extern "stdcall" fn wglDeleteContext(_rc: HGLRC) -> BOOL {
     println!("wglDeleteContext called, ignoring");
     TRUE
+}
+
+#[no_mangle]
+pub extern "stdcall" fn wglGetCurrentContext() -> HGLRC {
+    unimplemented!()
+}
+
+#[no_mangle]
+pub extern "stdcall" fn wglGetCurrentDC() -> HDC {
+    unimplemented!()
 }
 
 #[no_mangle]
@@ -1679,4 +1900,9 @@ pub extern "stdcall" fn wglMakeCurrent(_dc: HDC, _rc: HGLRC) -> BOOL {
 
 extern "stdcall" fn swap_buffers(dc: HDC) -> BOOL {
     context().swap_buffers(dc)
+}
+
+extern "stdcall" fn change_display_settings_ex_a(_lpszDeviceName: LPCSTR, _lpDevMode: *const c_void, _hwnd: HWND, _dwflags: DWORD, _lParam: LPVOID) -> LONG {
+    println!("ChangeDisplaySettingsExA called, ignoring");
+    0
 }

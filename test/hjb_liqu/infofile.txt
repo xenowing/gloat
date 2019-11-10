@@ -1,0 +1,22 @@
+
+               " liquid... wen? "
+
+                winning demo from
+                  assembly 2002
+
+
+--------------------------------------------------
+
+ this is somekind of prebugfixed version released
+ in hurry after the party. We will make a "final"
+ version also.
+
+ this demo is windows demo using opengl. geforce3
+
+ made by:  visualice  cynic  droid  vic  kimmo s.
+
+contact:
+
+  haujobb:                        all@haujobb.com
+  visualice Timo Harju     timo.harju@ppa.inet.fi
+  droid  Markus Pasula  markus.pasula@helsinki.fi
