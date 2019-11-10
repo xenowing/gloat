@@ -22,3 +22,4 @@ Note that this list isn't necessarily exhaustive, but should help me keep track 
 - [ ] Better traversal algorithm, so we don't sample the entire bounding box of each triangle
 - [ ] Move entire rasterizer to fixed-point arithmetic
 - [ ] Move entire implementation to 16-bit color to match xenowing's framebuffer format
+- [ ] Proper handling of back/front face and cull toggle (this will probably end up entirely as triangle setup details, and not rasterizer details)
