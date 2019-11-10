@@ -34,7 +34,6 @@ type PDWORD = *mut DWORD;
 type LONG = i32;
 
 type HANDLE = LPVOID;
-type HINSTANCE = HANDLE;
 type HWND = HANDLE;
 type HDC = HANDLE;
 type HGLRC = HANDLE;
@@ -1195,35 +1194,12 @@ impl Context {
 static mut CONTEXT: Option<Context> = None;
 
 fn context() -> &'static mut Context {
-    unsafe { CONTEXT.as_mut().expect("Attempted to get context reference when no context was initialized") }
-}
-
-const DLL_PROCESS_DETACH: DWORD = 0;
-const DLL_PROCESS_ATTACH: DWORD = 1;
-const DLL_THREAD_ATTACH: DWORD = 2;
-const DLL_THREAD_DETACH: DWORD = 3;
-
-#[no_mangle]
-pub unsafe extern "system" fn DllMain(_hinstDLL: HINSTANCE, fdwReason: DWORD, _lpvReserved: LPVOID) -> BOOL {
-    match fdwReason {
-        DLL_PROCESS_ATTACH => {
-            println!("DllMain: process attach");
+    unsafe {
+        if CONTEXT.is_none() {
             CONTEXT = Some(Context::new());
         }
-        DLL_PROCESS_DETACH => {
-            println!("DllMain: process detach");
-            CONTEXT = None;
-        }
-        DLL_THREAD_ATTACH => {
-            println!("DllMain: thread attach");
-        }
-        DLL_THREAD_DETACH => {
-            println!("DllMain: thread detach");
-        }
-        _ => panic!("DllMain called with invalid fdwReason value: {}", fdwReason)
+        CONTEXT.as_mut().unwrap()
     }
-
-    TRUE
 }
 
 #[no_mangle]
