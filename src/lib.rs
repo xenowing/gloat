@@ -310,7 +310,7 @@ impl Drop for PatchedFunction {
 struct Context {
     window: Window,
     back_buffer: Vec<u32>,
-    depth_buffer: Vec<f32>,
+    depth_buffer: Vec<u16>,
 
     _swap_buffers: PatchedFunction,
     _change_display_settings: PatchedFunction,
@@ -383,7 +383,7 @@ impl Context {
         Context {
             window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions::default()).expect("Could not create output window"),
             back_buffer: vec![0; WIDTH * HEIGHT],
-            depth_buffer: vec![1.0; WIDTH * HEIGHT],
+            depth_buffer: vec![65535; WIDTH * HEIGHT],
 
             _swap_buffers: PatchedFunction::new(SwapBuffers as _, swap_buffers as _),
             _change_display_settings: PatchedFunction::new(ChangeDisplaySettingsExA as _, change_display_settings_ex_a as _),
@@ -586,6 +586,7 @@ impl Context {
 
             for x in bb_min_x..bb_max_x + 1 {
                 if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
+                    let z = (z * 65535.0).floor() as u16;
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || z < self.depth_buffer[buffer_index] {
                         let src_color = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
@@ -753,7 +754,7 @@ impl Context {
                 // TODO: Only clear within viewport
                 if (mask & GL_DEPTH_BUFFER_BIT) != 0 {
                     for depth in self.depth_buffer.iter_mut() {
-                        *depth = 1.0;
+                        *depth = 65535;
                     }
                 }
                 if (mask & GL_COLOR_BUFFER_BIT) != 0 {
