@@ -23,3 +23,4 @@ Note that this list isn't necessarily exhaustive, but should help me keep track 
 - [ ] Move entire rasterizer to fixed-point arithmetic
 - [ ] Move entire implementation to 16-bit color to match xenowing's framebuffer format
 - [ ] Proper handling of back/front face and cull toggle (this will probably end up entirely as triangle setup details, and not rasterizer details)
+- [ ] Tiled rendering (again, most of this ends up being triangle setup, and some smarter culling as an optimization). Needs to include explicit color/depth buffer copies from/to main memory.
