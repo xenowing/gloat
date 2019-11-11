@@ -12,7 +12,7 @@ The rasterization algorithm is based on the classic [Pineda paper](https://www.c
 
 Note that this list isn't necessarily exhaustive, but should help me keep track of different things I'm exploring:
 
-- [x] Texture mapping (will likely only support POT textures up to 128x128)
+- [x] Texture mapping (will likely only support POT textures up to 128x128, maybe less to reduce texture cache bandwidth)
 - [ ] Perspective-correct s, t coords
 - [x] Blending (lots of modes missing, flesh this out!)
 - [ ] Proper top/left fill rule to tie-break sample coverage for polygons that share edges
