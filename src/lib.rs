@@ -213,7 +213,7 @@ struct Vertex {
     position: Vec4,
     normal: Vec3,
     color: Vec4,
-    tex_coord: Vec4,
+    tex_coord: Vec2,
 }
 
 enum Command {
@@ -344,7 +344,7 @@ struct Context {
 
     current_normal: Vec3,
     current_color: Vec4,
-    current_tex_coord: Vec4,
+    current_tex_coord: Vec2,
 
     verts: Vec<Vertex>,
 
@@ -418,7 +418,7 @@ impl Context {
 
             current_normal: Vec3::zero(),
             current_color: Vec4::new(0.0, 0.0, 0.0, 1.0),
-            current_tex_coord: Vec4::new(0.0, 0.0, 0.0, 1.0),
+            current_tex_coord: Vec2::new(0.0, 0.0),
 
             verts: Vec::new(),
 
@@ -559,19 +559,23 @@ impl Context {
         let w0_dy = (window_verts[2].x() - window_verts[1].x()) / scaled_area;
         let w1_dy = (window_verts[0].x() - window_verts[2].x()) / scaled_area;
         let w2_dy = (window_verts[1].x() - window_verts[0].x()) / scaled_area;
+        let w_inverse_min = 1.0 / verts[0].position.w() * w0_min + 1.0 / verts[1].position.w() * w1_min + 1.0 / verts[2].position.w() * w2_min;
+        let w_inverse_dx = 1.0 / verts[0].position.w() * w0_dx + 1.0 / verts[1].position.w() * w1_dx + 1.0 / verts[2].position.w() * w2_dx;
+        let w_inverse_dy = 1.0 / verts[0].position.w() * w0_dy + 1.0 / verts[1].position.w() * w1_dy + 1.0 / verts[2].position.w() * w2_dy;
         let z_min = window_verts[0].z() * w0_min + window_verts[1].z() * w1_min + window_verts[2].z() * w2_min;
         let z_dx = window_verts[0].z() * w0_dx + window_verts[1].z() * w1_dx + window_verts[2].z() * w2_dx;
         let z_dy = window_verts[0].z() * w0_dy + window_verts[1].z() * w1_dy + window_verts[2].z() * w2_dy;
-        let s_min = verts[0].tex_coord.x() * w0_min + verts[1].tex_coord.x() * w1_min + verts[2].tex_coord.x() * w2_min;
-        let t_min = verts[0].tex_coord.y() * w0_min + verts[1].tex_coord.y() * w1_min + verts[2].tex_coord.y() * w2_min;
-        let s_dx = verts[0].tex_coord.x() * w0_dx + verts[1].tex_coord.x() * w1_dx + verts[2].tex_coord.x() * w2_dx;
-        let t_dx = verts[0].tex_coord.y() * w0_dx + verts[1].tex_coord.y() * w1_dx + verts[2].tex_coord.y() * w2_dx;
-        let s_dy = verts[0].tex_coord.x() * w0_dy + verts[1].tex_coord.x() * w1_dy + verts[2].tex_coord.x() * w2_dy;
-        let t_dy = verts[0].tex_coord.y() * w0_dy + verts[1].tex_coord.y() * w1_dy + verts[2].tex_coord.y() * w2_dy;
+        let s_min = verts[0].tex_coord.x() / verts[0].position.w() * w0_min + verts[1].tex_coord.x() / verts[1].position.w() * w1_min + verts[2].tex_coord.x() / verts[2].position.w() * w2_min;
+        let t_min = verts[0].tex_coord.y() / verts[0].position.w() * w0_min + verts[1].tex_coord.y() / verts[1].position.w() * w1_min + verts[2].tex_coord.y() / verts[2].position.w() * w2_min;
+        let s_dx = verts[0].tex_coord.x() / verts[0].position.w() * w0_dx + verts[1].tex_coord.x() / verts[1].position.w() * w1_dx + verts[2].tex_coord.x() / verts[2].position.w() * w2_dx;
+        let t_dx = verts[0].tex_coord.y() / verts[0].position.w() * w0_dx + verts[1].tex_coord.y() / verts[1].position.w() * w1_dx + verts[2].tex_coord.y() / verts[2].position.w() * w2_dx;
+        let s_dy = verts[0].tex_coord.x() / verts[0].position.w() * w0_dy + verts[1].tex_coord.x() / verts[1].position.w() * w1_dy + verts[2].tex_coord.x() / verts[2].position.w() * w2_dy;
+        let t_dy = verts[0].tex_coord.y() / verts[0].position.w() * w0_dy + verts[1].tex_coord.y() / verts[1].position.w() * w1_dy + verts[2].tex_coord.y() / verts[2].position.w() * w2_dy;
 
         let mut w0_row = w0_min;
         let mut w1_row = w1_min;
         let mut w2_row = w2_min;
+        let mut w_inverse_row = w_inverse_min;
         let mut z_row = z_min;
         let mut s_row = s_min;
         let mut t_row = t_min;
@@ -580,6 +584,7 @@ impl Context {
             let mut w0 = w0_row;
             let mut w1 = w1_row;
             let mut w2 = w2_row;
+            let mut w_inverse = w_inverse_row;
             let mut z = z_row;
             let mut s = s_row;
             let mut t = t_row;
@@ -590,6 +595,9 @@ impl Context {
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || z < self.depth_buffer[buffer_index] {
                         let src_color = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
+                            let w = 1.0 / w_inverse;
+                            let s = s * w;
+                            let t = t * w;
                             let fragment_tex_coord = Vec2::new(s, t);
                             let texture = &self.textures[self.texture_2d as usize];
                             // Offset to sample texel centers
@@ -661,6 +669,7 @@ impl Context {
                 w0 += w0_dx;
                 w1 += w1_dx;
                 w2 += w2_dx;
+                w_inverse += w_inverse_dx;
                 z += z_dx;
                 s += s_dx;
                 t += t_dx;
@@ -669,6 +678,7 @@ impl Context {
             w0_row += w0_dy;
             w1_row += w1_dy;
             w2_row += w2_dy;
+            w_inverse_row += w_inverse_dy;
             z_row += z_dy;
             s_row += s_dy;
             t_row += t_dy;
@@ -869,7 +879,7 @@ impl Context {
             Command::MultiTexCoord2fARB { target, s, t } => {
                 // TODO
                 //println!("MultiTexCoord2fARB: target: 0x{:08x}, s: {}, t: {}", target, s, t);
-                self.current_tex_coord = Vec4::new(s, t, 0.0, 1.0);
+                self.current_tex_coord = Vec2::new(s, t);
             }
             Command::MultMatrixd { m } => {
                 self.multiply_current_matrix(Matrix::from_doubles(&m));
@@ -906,7 +916,7 @@ impl Context {
                 println!("ShadeModel: mode: 0x{:08x}", mode);
             }
             Command::TexCoord2f { s, t } => {
-                self.current_tex_coord = Vec4::new(s, t, 0.0, 1.0);
+                self.current_tex_coord = Vec2::new(s, t);
             }
             Command::TexGenf { coord, pname, param } => {
                 // TODO
