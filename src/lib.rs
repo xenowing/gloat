@@ -549,7 +549,7 @@ impl Context {
 
         let p = Vec2::new(bb_min_x as f32, bb_min_y as f32) + 0.5; // Offset to sample pixel centers
 
-        // TODO: Proper top/left fill rule, perspective correction
+        // TODO: Proper top/left fill rule
         let w0_min = orient2d(Vec2::new(window_verts[1].x(), window_verts[1].y()), Vec2::new(window_verts[2].x(), window_verts[2].y()), p) / scaled_area;
         let w1_min = orient2d(Vec2::new(window_verts[2].x(), window_verts[2].y()), Vec2::new(window_verts[0].x(), window_verts[0].y()), p) / scaled_area;
         let w2_min = orient2d(Vec2::new(window_verts[0].x(), window_verts[0].y()), Vec2::new(window_verts[1].x(), window_verts[1].y()), p) / scaled_area;
