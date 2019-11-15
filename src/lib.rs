@@ -500,7 +500,7 @@ impl Context {
         }
     }
 
-    fn assemble_triangle(&mut self, verts: [Vertex; 3]) {
+    fn assemble_triangle(&mut self, mut verts: [Vertex; 3]) {
         // TODO: Clipping, culling, ...
         for vert in verts.iter() {
             if vert.position.z() < -vert.position.w() || vert.position.z() > vert.position.w() {
@@ -565,12 +565,22 @@ impl Context {
         let z_min = window_verts[0].z() * w0_min + window_verts[1].z() * w1_min + window_verts[2].z() * w2_min;
         let z_dx = window_verts[0].z() * w0_dx + window_verts[1].z() * w1_dx + window_verts[2].z() * w2_dx;
         let z_dy = window_verts[0].z() * w0_dy + window_verts[1].z() * w1_dy + window_verts[2].z() * w2_dy;
-        let s_min = verts[0].tex_coord.x() / verts[0].position.w() * w0_min + verts[1].tex_coord.x() / verts[1].position.w() * w1_min + verts[2].tex_coord.x() / verts[2].position.w() * w2_min;
-        let t_min = verts[0].tex_coord.y() / verts[0].position.w() * w0_min + verts[1].tex_coord.y() / verts[1].position.w() * w1_min + verts[2].tex_coord.y() / verts[2].position.w() * w2_min;
-        let s_dx = verts[0].tex_coord.x() / verts[0].position.w() * w0_dx + verts[1].tex_coord.x() / verts[1].position.w() * w1_dx + verts[2].tex_coord.x() / verts[2].position.w() * w2_dx;
-        let t_dx = verts[0].tex_coord.y() / verts[0].position.w() * w0_dx + verts[1].tex_coord.y() / verts[1].position.w() * w1_dx + verts[2].tex_coord.y() / verts[2].position.w() * w2_dx;
-        let s_dy = verts[0].tex_coord.x() / verts[0].position.w() * w0_dy + verts[1].tex_coord.x() / verts[1].position.w() * w1_dy + verts[2].tex_coord.x() / verts[2].position.w() * w2_dy;
-        let t_dy = verts[0].tex_coord.y() / verts[0].position.w() * w0_dy + verts[1].tex_coord.y() / verts[1].position.w() * w1_dy + verts[2].tex_coord.y() / verts[2].position.w() * w2_dy;
+        let texture_dims = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
+            let texture = &self.textures[self.texture_2d as usize];
+            Vec2::new(texture.width as f32, texture.height as f32)
+        } else {
+            Vec2::splat(128.0)
+        };
+        let st_bias = -0.5; // Offset to sample texel centers
+        for i in 0..verts.len() {
+            verts[i].tex_coord = (verts[i].tex_coord * texture_dims + st_bias) / verts[i].position.w();
+        }
+        let s_min = verts[0].tex_coord.x() * w0_min + verts[1].tex_coord.x() * w1_min + verts[2].tex_coord.x() * w2_min;
+        let t_min = verts[0].tex_coord.y() * w0_min + verts[1].tex_coord.y() * w1_min + verts[2].tex_coord.y() * w2_min;
+        let s_dx = verts[0].tex_coord.x() * w0_dx + verts[1].tex_coord.x() * w1_dx + verts[2].tex_coord.x() * w2_dx;
+        let t_dx = verts[0].tex_coord.y() * w0_dx + verts[1].tex_coord.y() * w1_dx + verts[2].tex_coord.y() * w2_dx;
+        let s_dy = verts[0].tex_coord.x() * w0_dy + verts[1].tex_coord.x() * w1_dy + verts[2].tex_coord.x() * w2_dy;
+        let t_dy = verts[0].tex_coord.y() * w0_dy + verts[1].tex_coord.y() * w1_dy + verts[2].tex_coord.y() * w2_dy;
 
         let mut w0_row = w0_min;
         let mut w1_row = w1_min;
@@ -598,32 +608,28 @@ impl Context {
                             let w = 1.0 / w_inverse;
                             let s = s * w;
                             let t = t * w;
-                            let fragment_tex_coord = Vec2::new(s, t);
                             let texture = &self.textures[self.texture_2d as usize];
-                            // Offset to sample texel centers
-                            let u = fragment_tex_coord.x() * texture.width as f32 - 0.5;
-                            let v = fragment_tex_coord.y() * texture.height as f32 - 0.5;
-                            let u_floor = u.floor() as usize;
-                            let v_floor = v.floor() as usize;
-                            let u_fract = u - u.floor();
-                            let v_fract = v - v.floor();
-                            fn fetch_texel(texture: &Texture, u: usize, v: usize) -> Vec4 {
-                                let u = u & (texture.width - 1);
-                                let v = v & (texture.height - 1);
-                                let texel = texture.data[v * texture.width + u];
+                            let s_floor = s.floor() as usize;
+                            let t_floor = t.floor() as usize;
+                            let s_fract = s - s.floor();
+                            let t_fract = t - t.floor();
+                            fn fetch_texel(texture: &Texture, s: usize, t: usize) -> Vec4 {
+                                let s = s & (texture.width - 1);
+                                let t = t & (texture.height - 1);
+                                let texel = texture.data[t * texture.width + s];
                                 let texel_red = (texel >> 16) & 0xff;
                                 let texel_green = (texel >> 8) & 0xff;
                                 let texel_blue = (texel >> 0) & 0xff;
                                 let texel_alpha = (texel >> 24) & 0xff;
                                 Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 255.0
                             }
-                            let texel_color0 = fetch_texel(texture, u_floor + 0, v_floor + 0);
-                            let texel_color1 = fetch_texel(texture, u_floor + 1, v_floor + 0);
-                            let texel_color2 = fetch_texel(texture, u_floor + 0, v_floor + 1);
-                            let texel_color3 = fetch_texel(texture, u_floor + 1, v_floor + 1);
-                            let a = texel_color0 * (1.0 - u_fract) + texel_color1 * u_fract;
-                            let b = texel_color2 * (1.0 - u_fract) + texel_color3 * u_fract;
-                            let filtered_texel = a * (1.0 - v_fract) + b * v_fract;
+                            let texel_color0 = fetch_texel(texture, s_floor + 0, t_floor + 0);
+                            let texel_color1 = fetch_texel(texture, s_floor + 1, t_floor + 0);
+                            let texel_color2 = fetch_texel(texture, s_floor + 0, t_floor + 1);
+                            let texel_color3 = fetch_texel(texture, s_floor + 1, t_floor + 1);
+                            let a = texel_color0 * (1.0 - s_fract) + texel_color1 * s_fract;
+                            let b = texel_color2 * (1.0 - s_fract) + texel_color3 * s_fract;
+                            let filtered_texel = a * (1.0 - t_fract) + b * t_fract;
                             src_color * filtered_texel
                         } else {
                             src_color
