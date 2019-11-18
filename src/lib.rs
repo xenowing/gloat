@@ -6,7 +6,7 @@ mod vec2;
 mod vec3;
 mod vec4;
 
-use minifb::{Window, WindowOptions};
+use minifb::{Scale, Window, WindowOptions};
 
 use matrix::*;
 use vec2::*;
@@ -20,8 +20,8 @@ use std::rc::Rc;
 use std::slice;
 
 // TODO: Can we query this from the dc or something?
-const WIDTH: usize = 640;
-const HEIGHT: usize = 480;
+const WIDTH: usize = 320;
+const HEIGHT: usize = 240;
 
 type LPVOID = *mut c_void;
 
@@ -381,7 +381,12 @@ struct Context {
 impl Context {
     fn new() -> Context {
         Context {
-            window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions::default()).expect("Could not create output window"),
+            window: Window::new("gloat waddup", WIDTH, HEIGHT, WindowOptions {
+                borderless: false,
+                title: true,
+                resize: false,
+                scale: Scale::X2,
+            }).expect("Could not create output window"),
             back_buffer: vec![0; WIDTH * HEIGHT],
             depth_buffer: vec![65535; WIDTH * HEIGHT],
 
@@ -540,9 +545,6 @@ impl Context {
             scaled_area = -scaled_area;
         }
 
-        // TODO: Use properly interpolated color
-        let src_color = verts[0].color;
-
         let mut bb_min = Vec2::new(window_verts[0].x(), window_verts[0].y());
         let mut bb_max = bb_min;
         for i in 1..verts.len() {
@@ -656,7 +658,7 @@ impl Context {
         let z_dx = to_fixed(z_dx, z_fract_bits);
         let z_dy = to_fixed(z_dy, z_fract_bits);
 
-        let st_fract_bits = 18;
+        let st_fract_bits = 24;
         let s_min = to_fixed(s_min, st_fract_bits);
         let t_min = to_fixed(t_min, st_fract_bits);
         let s_dx = to_fixed(s_dx, st_fract_bits);
@@ -686,16 +688,20 @@ impl Context {
                     let z = (z >> (z_fract_bits - 16)) as u16;
                     let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
                     if !self.depth_test || z < self.depth_buffer[buffer_index] {
-                        let src_color = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
+                        // TODO: Use properly interpolated color
+                        let mut src_color = verts[0].color * 255.0;
+                        if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
                             let w = 1.0 / to_float(w_inverse, w_inverse_fract_bits);
                             let s = to_float(s, st_fract_bits) * w;
                             let t = to_float(t, st_fract_bits) * w;
                             let s_floor = s.floor() as usize;
                             let t_floor = t.floor() as usize;
-                            let s_fract = s - s.floor();
-                            let t_fract = t - t.floor();
+                            let s_fract = ((s - s.floor()) * 16.0).floor() as u32;
+                            let t_fract = ((t - t.floor()) * 16.0).floor() as u32;
+                            let one_minus_s_fract = 16 - s_fract;
+                            let one_minus_t_fract = 16 - t_fract;
                             let texture = &self.textures[self.texture_2d as usize];
-                            fn fetch_texel(texture: &Texture, s: usize, t: usize) -> Vec4 {
+                            fn fetch_texel(texture: &Texture, s: usize, t: usize) -> (u32, u32, u32, u32) {
                                 let s = s & (texture.width - 1);
                                 let t = t & (texture.height - 1);
                                 let texel = texture.data[t * texture.width + s];
@@ -703,19 +709,26 @@ impl Context {
                                 let texel_green = (texel >> 8) & 0xff;
                                 let texel_blue = (texel >> 0) & 0xff;
                                 let texel_alpha = (texel >> 24) & 0xff;
-                                Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 255.0
+                                (texel_red as u32, texel_green as u32, texel_blue as u32, texel_alpha as u32)
                             }
                             let texel_color0 = fetch_texel(texture, s_floor + 0, t_floor + 0);
                             let texel_color1 = fetch_texel(texture, s_floor + 1, t_floor + 0);
                             let texel_color2 = fetch_texel(texture, s_floor + 0, t_floor + 1);
                             let texel_color3 = fetch_texel(texture, s_floor + 1, t_floor + 1);
-                            let a = texel_color0 * (1.0 - s_fract) + texel_color1 * s_fract;
-                            let b = texel_color2 * (1.0 - s_fract) + texel_color3 * s_fract;
-                            let filtered_texel = a * (1.0 - t_fract) + b * t_fract;
-                            src_color * filtered_texel
-                        } else {
-                            src_color
-                        };
+                            let a_red = (texel_color0.0 * one_minus_s_fract + texel_color1.0 * s_fract) >> 4;
+                            let a_green = (texel_color0.1 * one_minus_s_fract + texel_color1.1 * s_fract) >> 4;
+                            let a_blue = (texel_color0.2 * one_minus_s_fract + texel_color1.2 * s_fract) >> 4;
+                            let a_alpha = (texel_color0.3 * one_minus_s_fract + texel_color1.3 * s_fract) >> 4;
+                            let b_red = (texel_color2.0 * one_minus_s_fract + texel_color3.0 * s_fract) >> 4;
+                            let b_green = (texel_color2.1 * one_minus_s_fract + texel_color3.1 * s_fract) >> 4;
+                            let b_blue = (texel_color2.2 * one_minus_s_fract + texel_color3.2 * s_fract) >> 4;
+                            let b_alpha = (texel_color2.3 * one_minus_s_fract + texel_color3.3 * s_fract) >> 4;
+                            let texel_red = (a_red * one_minus_t_fract + b_red * t_fract) >> 4;
+                            let texel_green = (a_green * one_minus_t_fract + b_green * t_fract) >> 4;
+                            let texel_blue = (a_blue * one_minus_t_fract + b_blue * t_fract) >> 4;
+                            let texel_alpha = (a_alpha * one_minus_t_fract + b_alpha * t_fract) >> 4;
+                            src_color = src_color * Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 256.0;
+                        }
 
                         let color = if self.blend_enable {
                             let src_scale_factors = match self.blend_src_factor {
@@ -729,19 +742,19 @@ impl Context {
                             let dst_green = (dst_color >> 8) & 0xff;
                             let dst_blue = (dst_color >> 0) & 0xff;
                             let dst_alpha = (dst_color >> 24) & 0xff;
-                            let dst_color = Vec4::new(dst_red as f32, dst_green as f32, dst_blue as f32, dst_alpha as f32) / 255.0;
+                            let dst_color = Vec4::new(dst_red as f32, dst_green as f32, dst_blue as f32, dst_alpha as f32);
                             let dst_scale_factors = match self.blend_dst_factor {
-                                BlendDstFactor::One => Vec4::splat(1.0),
+                                BlendDstFactor::One => Vec4::splat(255.0),
                                 BlendDstFactor::SrcAlpha => Vec4::splat(src_color.w()),
-                                BlendDstFactor::OneMinusSrcAlpha => Vec4::splat(1.0 - src_color.w()),
+                                BlendDstFactor::OneMinusSrcAlpha => Vec4::splat(255.0 - src_color.w()),
                             };
 
-                            src_color * src_scale_factors + dst_color * dst_scale_factors
+                            (src_color * src_scale_factors + dst_color * dst_scale_factors) / 256.0
                         } else {
                             src_color
                         };
 
-                        let color = color.max(Vec4::zero()).min(Vec4::splat(1.0)) * 255.0;
+                        let color = color.min(Vec4::splat(255.0));
                         let color_red = color.x().floor() as u32;
                         let color_green = color.y().floor() as u32;
                         let color_blue = color.z().floor() as u32;
@@ -874,7 +887,7 @@ impl Context {
                 self.clear_color_alpha = alpha;
             }
             Command::Color3f { red, green, blue } => {
-                self.current_color = Vec4::new(red, green, blue, 1.0);
+                self.current_color = Vec4::new(red, green, blue, 1.0).max(Vec4::splat(0.0)).min(Vec4::splat(1.0));
             }
             Command::Color4f { red, green, blue, alpha } => {
                 self.current_color = Vec4::new(red, green, blue, alpha);
@@ -1074,6 +1087,11 @@ impl Context {
                 });
             }
             Command::Viewport { x, y, width, height } => {
+                let x = x / 2;
+                let y = y / 2;
+                let width = width / 2;
+                let height = height / 2;
+                println!("Auto-scaling viewport: {}, {}, {}, {}", x, y, width, height);
                 self.viewport_x = x;
                 self.viewport_y = y;
                 self.viewport_width = width;
@@ -1229,7 +1247,7 @@ impl Context {
         TRUE
     }
 
-    fn tex_image_2d(&mut self, target: GLenum, level: GLint, internalformat: GLint, width: GLsizei, height: GLsizei, border: GLint, format: GLenum, type_: GLenum, data: *const GLvoid) {
+    fn tex_image_2d(&mut self, target: GLenum, level: GLint, internalformat: GLint, mut width: GLsizei, mut height: GLsizei, border: GLint, format: GLenum, type_: GLenum, data: *const GLvoid) {
         if target != GL_TEXTURE_2D {
             panic!("glTexImage2D called with invalid target: 0x{:08x}", target);
         }
@@ -1251,10 +1269,7 @@ impl Context {
 
         println!("TexImage2D: internalformat: 0x{:08x}, width: 0x{:08x}, height: 0x{:08x}, data: 0x{:08x}", internalformat, width, height, data as u32);
 
-        let texture = &mut self.textures[self.texture_2d as usize];
-        texture.width = width as usize;
-        texture.height = height as usize;
-        texture.data = vec![0; (width * height) as usize];
+        let mut texture_data = vec![0; (width * height) as usize];
 
         for y in 0..height as usize {
             for x in 0..width as usize {
@@ -1278,9 +1293,60 @@ impl Context {
                     }
                     _ => panic!("glTexImage2D called with invalid type: 0x{:08x}", type_)
                 };
-                texture.data[buffer_index] = color;
+                texture_data[buffer_index] = color;
             }
         }
+
+        while width > 128 || height > 128 {
+            let scaled_width = width / 2;
+            let scaled_height = height / 2;
+
+            println!("  Downscaling to {}x{}", scaled_width, scaled_height);
+
+            let mut scaled_data = vec![0; (scaled_width * scaled_height) as usize];
+
+            // Simplest bilinear average
+            for y in 0..scaled_height {
+                for x in 0..scaled_width {
+                    let scaled_x = x * 2;
+                    let scaled_y = y * 2;
+
+                    fn c2v(c: u32) -> Vec4 {
+                        let r = (c >> 16) & 0xff;
+                        let g = (c >> 8) & 0xff;
+                        let b = (c >> 0) & 0xff;
+                        let a = (c >> 24) & 0xff;
+                        Vec4::new(r as f32, g as f32, b as f32, a as f32)
+                    }
+
+                    let a = c2v(texture_data[((scaled_y + 0) * width + (scaled_x + 0)) as usize]);
+                    let b = c2v(texture_data[((scaled_y + 0) * width + (scaled_x + 1)) as usize]);
+                    let c = c2v(texture_data[((scaled_y + 1) * width + (scaled_x + 0)) as usize]);
+                    let d = c2v(texture_data[((scaled_y + 1) * width + (scaled_x + 1)) as usize]);
+
+                    let filtered = (a + b + c + d) / 4.0;
+
+                    fn v2c(v: Vec4) -> u32 {
+                        let r = v.x() as u32;
+                        let g = v.y() as u32;
+                        let b = v.z() as u32;
+                        let a = v.w() as u32;
+                        (a << 24) | (r << 16) | (g << 8) | (b << 0)
+                    }
+
+                    scaled_data[(y * scaled_width + x) as usize] = v2c(filtered);
+                }
+            }
+
+            width = scaled_width;
+            height = scaled_height;
+            texture_data = scaled_data;
+        }
+
+        let texture = &mut self.textures[self.texture_2d as usize];
+        texture.width = width as usize;
+        texture.height = height as usize;
+        texture.data = texture_data;
     }
 
     fn vertex_pointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
