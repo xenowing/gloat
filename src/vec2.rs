@@ -136,8 +136,8 @@ impl Mul<f32> for Vec2 {
 
     fn mul(self, other: f32) -> Vec2 {
         Vec2 {
-            x: self.x / other,
-            y: self.y / other,
+            x: self.x * other,
+            y: self.y * other,
         }
     }
 }
