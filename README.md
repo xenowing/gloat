@@ -21,7 +21,6 @@ Note that this list isn't necessarily exhaustive, but should help me keep track 
 - [ ] Separate rasterizer model from OpenGL frontend (both for ease of further testing, but also to make it clear which parts of the project are for which purpose)
 - [ ] Better traversal algorithm, so we don't sample the entire bounding box of each triangle
 - [ ] Move entire rasterizer to fixed-point arithmetic
-- [ ] Move entire implementation to 16-bit color to match xenowing's framebuffer format
 - [ ] Proper handling of back/front face and cull toggle (this will probably end up entirely as triangle setup details, and not rasterizer details)
 - [ ] Tiled rendering (again, most of this ends up being triangle setup, and some smarter culling as an optimization). Needs to include explicit color/depth buffer copies from/to main memory.
 - [ ] Reduce color depth (currently thinking doing everything with rgb565, and then have support for separate alpha maps. Hopefully there's not tons of overhead transferring textures in/out of cache..)
