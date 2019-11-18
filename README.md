@@ -23,4 +23,3 @@ Note that this list isn't necessarily exhaustive, but should help me keep track 
 - [ ] Move entire rasterizer to fixed-point arithmetic
 - [ ] Proper handling of back/front face and cull toggle (this will probably end up entirely as triangle setup details, and not rasterizer details)
 - [ ] Tiled rendering (again, most of this ends up being triangle setup, and some smarter culling as an optimization). Needs to include explicit color/depth buffer copies from/to main memory.
-- [ ] Reduce color depth (currently thinking doing everything with rgb565, and then have support for separate alpha maps. Hopefully there's not tons of overhead transferring textures in/out of cache..)
