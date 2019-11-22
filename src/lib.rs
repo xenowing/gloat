@@ -653,7 +653,7 @@ impl Context {
         let w_inverse_dx = to_fixed(w_inverse_dx, w_inverse_fract_bits);
         let w_inverse_dy = to_fixed(w_inverse_dy, w_inverse_fract_bits);
 
-        let z_fract_bits = 30;
+        let z_fract_bits = 30; // Must be greater than 16
         let z_min = to_fixed(z_min, z_fract_bits);
         let z_dx = to_fixed(z_dx, z_fract_bits);
         let z_dy = to_fixed(z_dy, z_fract_bits);
@@ -691,42 +691,46 @@ impl Context {
                         // TODO: Use properly interpolated color
                         let mut src_color = verts[0].color * 255.0;
                         if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
-                            let w = 1.0 / to_float(w_inverse, w_inverse_fract_bits);
-                            let s = to_float(s, st_fract_bits) * w;
-                            let t = to_float(t, st_fract_bits) * w;
-                            let s_floor = s.floor() as usize;
-                            let t_floor = t.floor() as usize;
-                            let s_fract = ((s - s.floor()) * 16.0).floor() as u32;
-                            let t_fract = ((t - t.floor()) * 16.0).floor() as u32;
-                            let one_minus_s_fract = 16 - s_fract;
-                            let one_minus_t_fract = 16 - t_fract;
+                            let w_fract_bits = 8; // Must be less than w_inverse_fract_bits and st_fract_bits
+                            let one = 1 << w_inverse_fract_bits;
+                            let w = (one << w_inverse_fract_bits) / (w_inverse as i64);
+                            let w = (w >> (w_inverse_fract_bits - w_fract_bits)) as i32;
+                            let s = ((s >> w_fract_bits) * w) as u32;
+                            let t = ((t >> w_fract_bits) * w) as u32;
+                            let s_floor = s >> st_fract_bits;
+                            let t_floor = t >> st_fract_bits;
+                            let st_filter_bits = 4; // Must be less than st_fract_bits
+                            let s_fract = (s >> (st_fract_bits - st_filter_bits)) & ((1 << st_filter_bits) - 1);
+                            let t_fract = (t >> (st_fract_bits - st_filter_bits)) & ((1 << st_filter_bits) - 1);
+                            let one_minus_s_fract = (1 << st_filter_bits) - s_fract;
+                            let one_minus_t_fract = (1 << st_filter_bits) - t_fract;
                             let texture = &self.textures[self.texture_2d as usize];
-                            fn fetch_texel(texture: &Texture, s: usize, t: usize) -> (u32, u32, u32, u32) {
-                                let s = s & (texture.width - 1);
-                                let t = t & (texture.height - 1);
+                            fn fetch_texel(texture: &Texture, s: u32, t: u32) -> (u32, u32, u32, u32) {
+                                let s = s as usize & (texture.width - 1);
+                                let t = t as usize & (texture.height - 1);
                                 let texel = texture.data[t * texture.width + s];
                                 let texel_red = (texel >> 16) & 0xff;
                                 let texel_green = (texel >> 8) & 0xff;
                                 let texel_blue = (texel >> 0) & 0xff;
                                 let texel_alpha = (texel >> 24) & 0xff;
-                                (texel_red as u32, texel_green as u32, texel_blue as u32, texel_alpha as u32)
+                                (texel_red, texel_green, texel_blue, texel_alpha)
                             }
                             let texel_color0 = fetch_texel(texture, s_floor + 0, t_floor + 0);
                             let texel_color1 = fetch_texel(texture, s_floor + 1, t_floor + 0);
                             let texel_color2 = fetch_texel(texture, s_floor + 0, t_floor + 1);
                             let texel_color3 = fetch_texel(texture, s_floor + 1, t_floor + 1);
-                            let a_red = (texel_color0.0 * one_minus_s_fract + texel_color1.0 * s_fract) >> 4;
-                            let a_green = (texel_color0.1 * one_minus_s_fract + texel_color1.1 * s_fract) >> 4;
-                            let a_blue = (texel_color0.2 * one_minus_s_fract + texel_color1.2 * s_fract) >> 4;
-                            let a_alpha = (texel_color0.3 * one_minus_s_fract + texel_color1.3 * s_fract) >> 4;
-                            let b_red = (texel_color2.0 * one_minus_s_fract + texel_color3.0 * s_fract) >> 4;
-                            let b_green = (texel_color2.1 * one_minus_s_fract + texel_color3.1 * s_fract) >> 4;
-                            let b_blue = (texel_color2.2 * one_minus_s_fract + texel_color3.2 * s_fract) >> 4;
-                            let b_alpha = (texel_color2.3 * one_minus_s_fract + texel_color3.3 * s_fract) >> 4;
-                            let texel_red = (a_red * one_minus_t_fract + b_red * t_fract) >> 4;
-                            let texel_green = (a_green * one_minus_t_fract + b_green * t_fract) >> 4;
-                            let texel_blue = (a_blue * one_minus_t_fract + b_blue * t_fract) >> 4;
-                            let texel_alpha = (a_alpha * one_minus_t_fract + b_alpha * t_fract) >> 4;
+                            let a_red = (texel_color0.0 * one_minus_s_fract + texel_color1.0 * s_fract) >> st_filter_bits;
+                            let a_green = (texel_color0.1 * one_minus_s_fract + texel_color1.1 * s_fract) >> st_filter_bits;
+                            let a_blue = (texel_color0.2 * one_minus_s_fract + texel_color1.2 * s_fract) >> st_filter_bits;
+                            let a_alpha = (texel_color0.3 * one_minus_s_fract + texel_color1.3 * s_fract) >> st_filter_bits;
+                            let b_red = (texel_color2.0 * one_minus_s_fract + texel_color3.0 * s_fract) >> st_filter_bits;
+                            let b_green = (texel_color2.1 * one_minus_s_fract + texel_color3.1 * s_fract) >> st_filter_bits;
+                            let b_blue = (texel_color2.2 * one_minus_s_fract + texel_color3.2 * s_fract) >> st_filter_bits;
+                            let b_alpha = (texel_color2.3 * one_minus_s_fract + texel_color3.3 * s_fract) >> st_filter_bits;
+                            let texel_red = (a_red * one_minus_t_fract + b_red * t_fract) >> st_filter_bits;
+                            let texel_green = (a_green * one_minus_t_fract + b_green * t_fract) >> st_filter_bits;
+                            let texel_blue = (a_blue * one_minus_t_fract + b_blue * t_fract) >> st_filter_bits;
+                            let texel_alpha = (a_alpha * one_minus_t_fract + b_alpha * t_fract) >> st_filter_bits;
                             src_color = src_color * Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 256.0;
                         }
 
