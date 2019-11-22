@@ -151,9 +151,9 @@ impl Mul<f32> for Vec3 {
 
     fn mul(self, other: f32) -> Vec3 {
         Vec3 {
-            x: self.x / other,
-            y: self.y / other,
-            z: self.z / other,
+            x: self.x * other,
+            y: self.y * other,
+            z: self.z * other,
         }
     }
 }
