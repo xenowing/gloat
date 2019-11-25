@@ -18,7 +18,7 @@ Note that this list isn't necessarily exhaustive, but should help me keep track 
 - [ ] Proper top/left fill rule to tie-break sample coverage for polygons that share edges
 - [ ] Proper view frustum clipping/culling
 - [ ] There seem to be some coverage issues in some cases, with visible holes between polygons. Perhaps the triangle bounding boxes aren't conservative enough?
-- [ ] Separate rasterizer model from OpenGL frontend (both for ease of further testing, but also to make it clear which parts of the project are for which purpose)
+- [x] Separate rasterizer model from OpenGL frontend (both for ease of further testing, but also to make it clear which parts of the project are for which purpose)
 - [ ] Better traversal algorithm, so we don't sample the entire bounding box of each triangle (this may be a non-issue with a tiled renderer actually)
 - [ ] Move entire rasterizer to fixed-point arithmetic
 - [ ] Remove conditionals in rendering inner loop (to disable textures, a small white texture can be used, and to disable blending, the right src/dst can be selected)
