@@ -1,6 +1,7 @@
 #![allow(non_snake_case, non_camel_case_types)]
 #![feature(stdarch)]
 
+mod color_thrust;
 mod matrix;
 mod vec2;
 mod vec3;
@@ -8,6 +9,7 @@ mod vec4;
 
 use minifb::{Scale, Window, WindowOptions};
 
+use color_thrust::*;
 use matrix::*;
 use vec2::*;
 use vec3::*;
@@ -136,18 +138,6 @@ const GL_CLAMP: GLint = 0x2900;
 
 const GL_VERTEX_ARRAY: GLenum = 0x8074;
 const GL_NORMAL_ARRAY: GLenum = 0x8075;
-
-enum BlendSrcFactor {
-    Zero,
-    SrcColor,
-    SrcAlpha,
-}
-
-enum BlendDstFactor {
-    One,
-    SrcAlpha,
-    OneMinusSrcAlpha,
-}
 
 struct DisplayList {
     commands: Vec<Command>,
@@ -545,6 +535,17 @@ impl Context {
             scaled_area = -scaled_area;
         }
 
+        let texture_dims = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
+            let texture = &self.textures[self.texture_2d as usize];
+            Vec2::new(texture.width as f32, texture.height as f32)
+        } else {
+            Vec2::splat(2.0)
+        };
+        let st_bias = -0.5; // Offset to sample texel centers
+        for i in 0..verts.len() {
+            verts[i].tex_coord = (verts[i].tex_coord * texture_dims + st_bias) / verts[i].position.w();
+        }
+
         let mut bb_min = Vec2::new(window_verts[0].x(), window_verts[0].y());
         let mut bb_max = bb_min;
         for i in 1..verts.len() {
@@ -560,48 +561,40 @@ impl Context {
         let bb_max_x = bb_max.x().ceil() as i32;
         let bb_max_y = bb_max.y().ceil() as i32;
 
-        let p = Vec2::new(bb_min_x as f32, bb_min_y as f32) + 0.5; // Offset to sample pixel centers
+        // TODO: Re-use between primitives
+        let mut color_thrust = ColorThrust::new();
 
-        // TODO: Proper top/left fill rule
-        // TODO: It seems that these scaled_area divides are what's breaking culling!!
-        let w0_min = orient2d(Vec2::new(window_verts[1].x(), window_verts[1].y()), Vec2::new(window_verts[2].x(), window_verts[2].y()), p) / scaled_area;
-        let w1_min = orient2d(Vec2::new(window_verts[2].x(), window_verts[2].y()), Vec2::new(window_verts[0].x(), window_verts[0].y()), p) / scaled_area;
-        let w2_min = orient2d(Vec2::new(window_verts[0].x(), window_verts[0].y()), Vec2::new(window_verts[1].x(), window_verts[1].y()), p) / scaled_area;
-        let w0_dx = (window_verts[1].y() - window_verts[2].y()) / scaled_area;
-        let w1_dx = (window_verts[2].y() - window_verts[0].y()) / scaled_area;
-        let w2_dx = (window_verts[0].y() - window_verts[1].y()) / scaled_area;
-        let w0_dy = (window_verts[2].x() - window_verts[1].x()) / scaled_area;
-        let w1_dy = (window_verts[0].x() - window_verts[2].x()) / scaled_area;
-        let w2_dy = (window_verts[1].x() - window_verts[0].x()) / scaled_area;
-
-        let w_inverse_min = 1.0 / verts[0].position.w() * w0_min + 1.0 / verts[1].position.w() * w1_min + 1.0 / verts[2].position.w() * w2_min;
-        let w_inverse_dx = 1.0 / verts[0].position.w() * w0_dx + 1.0 / verts[1].position.w() * w1_dx + 1.0 / verts[2].position.w() * w2_dx;
-        let w_inverse_dy = 1.0 / verts[0].position.w() * w0_dy + 1.0 / verts[1].position.w() * w1_dy + 1.0 / verts[2].position.w() * w2_dy;
-
-        let z_min = window_verts[0].z() * w0_min + window_verts[1].z() * w1_min + window_verts[2].z() * w2_min;
-        let z_dx = window_verts[0].z() * w0_dx + window_verts[1].z() * w1_dx + window_verts[2].z() * w2_dx;
-        let z_dy = window_verts[0].z() * w0_dy + window_verts[1].z() * w1_dy + window_verts[2].z() * w2_dy;
-
-        let texture_dims = if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
+        // TODO: if texturing isn't enabled, upload 2x2 white texture
+        if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
             let texture = &self.textures[self.texture_2d as usize];
-            Vec2::new(texture.width as f32, texture.height as f32)
+            for y in 0..texture.height {
+                for x in 0..texture.width {
+                    let buffer_index = y * texture.width + x;
+                    color_thrust.texture_buffer[buffer_index] = texture.data[buffer_index];
+                }
+            }
+            color_thrust.texture_width_shift = 6 - (texture.width as u8).leading_zeros();
+            color_thrust.texture_height_shift = 6 - (texture.height as u8).leading_zeros();
         } else {
-            Vec2::splat(128.0)
-        };
-        let st_bias = -0.5; // Offset to sample texel centers
-        for i in 0..verts.len() {
-            verts[i].tex_coord = (verts[i].tex_coord * texture_dims + st_bias) / verts[i].position.w();
+            for i in 0..4 {
+                color_thrust.texture_buffer[i] = 0xffffffff;
+            }
+            color_thrust.texture_width_shift = 0;
+            color_thrust.texture_height_shift = 0;
         }
-        let s_min = verts[0].tex_coord.x() * w0_min + verts[1].tex_coord.x() * w1_min + verts[2].tex_coord.x() * w2_min;
-        let t_min = verts[0].tex_coord.y() * w0_min + verts[1].tex_coord.y() * w1_min + verts[2].tex_coord.y() * w2_min;
-        let s_dx = verts[0].tex_coord.x() * w0_dx + verts[1].tex_coord.x() * w1_dx + verts[2].tex_coord.x() * w2_dx;
-        let t_dx = verts[0].tex_coord.y() * w0_dx + verts[1].tex_coord.y() * w1_dx + verts[2].tex_coord.y() * w2_dx;
-        let s_dy = verts[0].tex_coord.x() * w0_dy + verts[1].tex_coord.x() * w1_dy + verts[2].tex_coord.x() * w2_dy;
-        let t_dy = verts[0].tex_coord.y() * w0_dy + verts[1].tex_coord.y() * w1_dy + verts[2].tex_coord.y() * w2_dy;
 
-        fn to_fixed(x: f32, fract_bits: i32) -> i32 {
+        // TODO: This only needs to happen once per drawcall, not once per primitive
+        if self.blend_enable {
+            color_thrust.blend_src_factor = self.blend_src_factor;
+            color_thrust.blend_dst_factor = self.blend_dst_factor;
+        } else {
+            color_thrust.blend_src_factor = BlendSrcFactor::One;
+            color_thrust.blend_dst_factor = BlendDstFactor::Zero;
+        }
+
+        fn to_fixed(x: f32, fract_bits: u32) -> i32 {
             let bits = x.to_bits() as i32;
-            let exponent = ((bits >> 23) & 0xff) - 127 - 23 + fract_bits;
+            let exponent = ((bits >> 23) & 0xff) - 127 - 23 + (fract_bits as i32);
             let mut result = (bits & 0x7fffff) | 0x800000;
             if exponent < 0 {
                 if exponent > -32 {
@@ -622,14 +615,6 @@ impl Context {
             result
         }
 
-        fn to_float(x: i32, fract_bits: i32) -> f32 {
-            // TODO: More careful conversion? This is only used for testing anyways..
-            (x as f32) / ((1 << fract_bits) as f32)
-        }
-
-        let w0_min = orient2d(Vec2::new(window_verts[1].x(), window_verts[1].y()), Vec2::new(window_verts[2].x(), window_verts[2].y()), p);
-        let w1_min = orient2d(Vec2::new(window_verts[2].x(), window_verts[2].y()), Vec2::new(window_verts[0].x(), window_verts[0].y()), p);
-        let w2_min = orient2d(Vec2::new(window_verts[0].x(), window_verts[0].y()), Vec2::new(window_verts[1].x(), window_verts[1].y()), p);
         let w0_dx = window_verts[1].y() - window_verts[2].y();
         let w1_dx = window_verts[2].y() - window_verts[0].y();
         let w2_dx = window_verts[0].y() - window_verts[1].y();
@@ -637,156 +622,102 @@ impl Context {
         let w1_dy = window_verts[0].x() - window_verts[2].x();
         let w2_dy = window_verts[1].x() - window_verts[0].x();
 
-        let w_fract_bits = 8;
-        let w0_min = to_fixed(w0_min, w_fract_bits);
-        let w1_min = to_fixed(w1_min, w_fract_bits);
-        let w2_min = to_fixed(w2_min, w_fract_bits);
-        let w0_dx = to_fixed(w0_dx, w_fract_bits);
-        let w1_dx = to_fixed(w1_dx, w_fract_bits);
-        let w2_dx = to_fixed(w2_dx, w_fract_bits);
-        let w0_dy = to_fixed(w0_dy, w_fract_bits);
-        let w1_dy = to_fixed(w1_dy, w_fract_bits);
-        let w2_dy = to_fixed(w2_dy, w_fract_bits);
+        color_thrust.w0_dx = to_fixed(w0_dx, W_FRACT_BITS);
+        color_thrust.w1_dx = to_fixed(w1_dx, W_FRACT_BITS);
+        color_thrust.w2_dx = to_fixed(w2_dx, W_FRACT_BITS);
+        color_thrust.w0_dy = to_fixed(w0_dy, W_FRACT_BITS);
+        color_thrust.w1_dy = to_fixed(w1_dy, W_FRACT_BITS);
+        color_thrust.w2_dy = to_fixed(w2_dy, W_FRACT_BITS);
 
-        let w_inverse_fract_bits = 30;
-        let w_inverse_min = to_fixed(w_inverse_min, w_inverse_fract_bits);
-        let w_inverse_dx = to_fixed(w_inverse_dx, w_inverse_fract_bits);
-        let w_inverse_dy = to_fixed(w_inverse_dy, w_inverse_fract_bits);
+        let w0_dx = w0_dx / scaled_area;
+        let w1_dx = w1_dx / scaled_area;
+        let w2_dx = w2_dx / scaled_area;
+        let w0_dy = w0_dy / scaled_area;
+        let w1_dy = w1_dy / scaled_area;
+        let w2_dy = w2_dy / scaled_area;
 
-        let z_fract_bits = 30; // Must be greater than 16
-        let z_min = to_fixed(z_min, z_fract_bits);
-        let z_dx = to_fixed(z_dx, z_fract_bits);
-        let z_dy = to_fixed(z_dy, z_fract_bits);
+        let w_inverse_dx = 1.0 / verts[0].position.w() * w0_dx + 1.0 / verts[1].position.w() * w1_dx + 1.0 / verts[2].position.w() * w2_dx;
+        let w_inverse_dy = 1.0 / verts[0].position.w() * w0_dy + 1.0 / verts[1].position.w() * w1_dy + 1.0 / verts[2].position.w() * w2_dy;
+        color_thrust.w_inverse_dx = to_fixed(w_inverse_dx, W_INVERSE_FRACT_BITS);
+        color_thrust.w_inverse_dy = to_fixed(w_inverse_dy, W_INVERSE_FRACT_BITS);
 
-        let st_fract_bits = 24;
-        let s_min = to_fixed(s_min, st_fract_bits);
-        let t_min = to_fixed(t_min, st_fract_bits);
-        let s_dx = to_fixed(s_dx, st_fract_bits);
-        let t_dx = to_fixed(t_dx, st_fract_bits);
-        let s_dy = to_fixed(s_dy, st_fract_bits);
-        let t_dy = to_fixed(t_dy, st_fract_bits);
+        let z_dx = window_verts[0].z() * w0_dx + window_verts[1].z() * w1_dx + window_verts[2].z() * w2_dx;
+        let z_dy = window_verts[0].z() * w0_dy + window_verts[1].z() * w1_dy + window_verts[2].z() * w2_dy;
+        color_thrust.z_dx = to_fixed(z_dx, Z_FRACT_BITS);
+        color_thrust.z_dy = to_fixed(z_dy, Z_FRACT_BITS);
 
-        let mut w0_row = w0_min;
-        let mut w1_row = w1_min;
-        let mut w2_row = w2_min;
-        let mut w_inverse_row = w_inverse_min;
-        let mut z_row = z_min;
-        let mut s_row = s_min;
-        let mut t_row = t_min;
+        let s_dx = verts[0].tex_coord.x() * w0_dx + verts[1].tex_coord.x() * w1_dx + verts[2].tex_coord.x() * w2_dx;
+        let t_dx = verts[0].tex_coord.y() * w0_dx + verts[1].tex_coord.y() * w1_dx + verts[2].tex_coord.y() * w2_dx;
+        let s_dy = verts[0].tex_coord.x() * w0_dy + verts[1].tex_coord.x() * w1_dy + verts[2].tex_coord.x() * w2_dy;
+        let t_dy = verts[0].tex_coord.y() * w0_dy + verts[1].tex_coord.y() * w1_dy + verts[2].tex_coord.y() * w2_dy;
+        color_thrust.s_dx = to_fixed(s_dx, ST_FRACT_BITS);
+        color_thrust.t_dx = to_fixed(t_dx, ST_FRACT_BITS);
+        color_thrust.s_dy = to_fixed(s_dy, ST_FRACT_BITS);
+        color_thrust.t_dy = to_fixed(t_dy, ST_FRACT_BITS);
 
-        for y in bb_min_y..bb_max_y + 1 {
-            let mut w0 = w0_row;
-            let mut w1 = w1_row;
-            let mut w2 = w2_row;
-            let mut w_inverse = w_inverse_row;
-            let mut z = z_row;
-            let mut s = s_row;
-            let mut t = t_row;
+        for tile_index_y in 0..HEIGHT / TILE_DIM {
+            let tile_min_y = (tile_index_y * TILE_DIM) as i32;
+            let tile_max_y = tile_min_y + TILE_DIM as i32 - 1;
 
-            for x in bb_min_x..bb_max_x + 1 {
-                if (w0 | w1 | w2) >= 0 {
-                    let z = (z >> (z_fract_bits - 16)) as u16;
-                    let buffer_index = (HEIGHT - 1 - y as usize) * WIDTH + x as usize;
-                    if !self.depth_test || z < self.depth_buffer[buffer_index] {
-                        // TODO: Use properly interpolated color
-                        let mut src_color = verts[0].color * 255.0;
-                        if self.texture_2d_enable && (self.texture_2d as usize) < self.textures.len() {
-                            let w_fract_bits = 8; // Must be less than w_inverse_fract_bits and st_fract_bits
-                            let one = 1 << w_inverse_fract_bits;
-                            let w = (one << w_inverse_fract_bits) / (w_inverse as i64);
-                            let w = (w >> (w_inverse_fract_bits - w_fract_bits)) as i32;
-                            let s = ((s >> w_fract_bits) * w) as u32;
-                            let t = ((t >> w_fract_bits) * w) as u32;
-                            let s_floor = s >> st_fract_bits;
-                            let t_floor = t >> st_fract_bits;
-                            let st_filter_bits = 4; // Must be less than st_fract_bits
-                            let s_fract = (s >> (st_fract_bits - st_filter_bits)) & ((1 << st_filter_bits) - 1);
-                            let t_fract = (t >> (st_fract_bits - st_filter_bits)) & ((1 << st_filter_bits) - 1);
-                            let one_minus_s_fract = (1 << st_filter_bits) - s_fract;
-                            let one_minus_t_fract = (1 << st_filter_bits) - t_fract;
-                            let texture = &self.textures[self.texture_2d as usize];
-                            fn fetch_texel(texture: &Texture, s: u32, t: u32) -> (u32, u32, u32, u32) {
-                                let s = s as usize & (texture.width - 1);
-                                let t = t as usize & (texture.height - 1);
-                                let texel = texture.data[t * texture.width + s];
-                                let texel_red = (texel >> 16) & 0xff;
-                                let texel_green = (texel >> 8) & 0xff;
-                                let texel_blue = (texel >> 0) & 0xff;
-                                let texel_alpha = (texel >> 24) & 0xff;
-                                (texel_red, texel_green, texel_blue, texel_alpha)
-                            }
-                            let texel_color0 = fetch_texel(texture, s_floor + 0, t_floor + 0);
-                            let texel_color1 = fetch_texel(texture, s_floor + 1, t_floor + 0);
-                            let texel_color2 = fetch_texel(texture, s_floor + 0, t_floor + 1);
-                            let texel_color3 = fetch_texel(texture, s_floor + 1, t_floor + 1);
-                            let a_red = (texel_color0.0 * one_minus_s_fract + texel_color1.0 * s_fract) >> st_filter_bits;
-                            let a_green = (texel_color0.1 * one_minus_s_fract + texel_color1.1 * s_fract) >> st_filter_bits;
-                            let a_blue = (texel_color0.2 * one_minus_s_fract + texel_color1.2 * s_fract) >> st_filter_bits;
-                            let a_alpha = (texel_color0.3 * one_minus_s_fract + texel_color1.3 * s_fract) >> st_filter_bits;
-                            let b_red = (texel_color2.0 * one_minus_s_fract + texel_color3.0 * s_fract) >> st_filter_bits;
-                            let b_green = (texel_color2.1 * one_minus_s_fract + texel_color3.1 * s_fract) >> st_filter_bits;
-                            let b_blue = (texel_color2.2 * one_minus_s_fract + texel_color3.2 * s_fract) >> st_filter_bits;
-                            let b_alpha = (texel_color2.3 * one_minus_s_fract + texel_color3.3 * s_fract) >> st_filter_bits;
-                            let texel_red = (a_red * one_minus_t_fract + b_red * t_fract) >> st_filter_bits;
-                            let texel_green = (a_green * one_minus_t_fract + b_green * t_fract) >> st_filter_bits;
-                            let texel_blue = (a_blue * one_minus_t_fract + b_blue * t_fract) >> st_filter_bits;
-                            let texel_alpha = (a_alpha * one_minus_t_fract + b_alpha * t_fract) >> st_filter_bits;
-                            src_color = src_color * Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 256.0;
-                        }
+            if bb_max_y < tile_min_y || bb_min_y > tile_max_y {
+                continue;
+            }
 
-                        let color = if self.blend_enable {
-                            let src_scale_factors = match self.blend_src_factor {
-                                BlendSrcFactor::Zero => Vec4::zero(),
-                                BlendSrcFactor::SrcColor => src_color,
-                                BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
-                            };
+            for tile_index_x in 0..WIDTH / TILE_DIM {
+                let tile_min_x = (tile_index_x * TILE_DIM) as i32;
+                let tile_max_x = tile_min_x + TILE_DIM as i32 - 1;
 
-                            let dst_color = self.back_buffer[buffer_index];
-                            let dst_red = (dst_color >> 16) & 0xff;
-                            let dst_green = (dst_color >> 8) & 0xff;
-                            let dst_blue = (dst_color >> 0) & 0xff;
-                            let dst_alpha = (dst_color >> 24) & 0xff;
-                            let dst_color = Vec4::new(dst_red as f32, dst_green as f32, dst_blue as f32, dst_alpha as f32);
-                            let dst_scale_factors = match self.blend_dst_factor {
-                                BlendDstFactor::One => Vec4::splat(255.0),
-                                BlendDstFactor::SrcAlpha => Vec4::splat(src_color.w()),
-                                BlendDstFactor::OneMinusSrcAlpha => Vec4::splat(255.0 - src_color.w()),
-                            };
+                if bb_max_x < tile_min_x || bb_min_x > tile_max_x {
+                    continue;
+                }
 
-                            (src_color * src_scale_factors + dst_color * dst_scale_factors) / 256.0
-                        } else {
-                            src_color
-                        };
-
-                        let color = color.min(Vec4::splat(255.0));
-                        let color_red = color.x().floor() as u32;
-                        let color_green = color.y().floor() as u32;
-                        let color_blue = color.z().floor() as u32;
-                        let color_alpha = color.w().floor() as u32;
-                        self.back_buffer[buffer_index] = (color_alpha << 24) | (color_red << 16) | (color_green << 8) | (color_blue << 0);
-
-                        if self.depth_mask {
-                            self.depth_buffer[buffer_index] = z;
-                        }
+                // Copy tile into rasterizer memory
+                for y in 0..TILE_DIM {
+                    for x in 0..TILE_DIM {
+                        let buffer_index = (HEIGHT - 1 - (tile_min_y as usize + y)) * WIDTH + tile_min_x as usize + x;
+                        let tile_buffer_index = y * TILE_DIM + x;
+                        color_thrust.color_buffer0[tile_buffer_index] = self.back_buffer[buffer_index];
+                        color_thrust.depth_buffer0[tile_buffer_index] = self.depth_buffer[buffer_index];
                     }
                 }
 
-                w0 += w0_dx;
-                w1 += w1_dx;
-                w2 += w2_dx;
-                w_inverse += w_inverse_dx;
-                z += z_dx;
-                s += s_dx;
-                t += t_dx;
-            }
+                let p = Vec2::new(tile_min_x as f32, tile_min_y as f32) + 0.5; // Offset to sample pixel centers
 
-            w0_row += w0_dy;
-            w1_row += w1_dy;
-            w2_row += w2_dy;
-            w_inverse_row += w_inverse_dy;
-            z_row += z_dy;
-            s_row += s_dy;
-            t_row += t_dy;
+                // TODO: Proper top/left fill rule
+                let w0_min = orient2d(Vec2::new(window_verts[1].x(), window_verts[1].y()), Vec2::new(window_verts[2].x(), window_verts[2].y()), p);
+                let w1_min = orient2d(Vec2::new(window_verts[2].x(), window_verts[2].y()), Vec2::new(window_verts[0].x(), window_verts[0].y()), p);
+                let w2_min = orient2d(Vec2::new(window_verts[0].x(), window_verts[0].y()), Vec2::new(window_verts[1].x(), window_verts[1].y()), p);
+                color_thrust.w0_min = to_fixed(w0_min, W_FRACT_BITS);
+                color_thrust.w1_min = to_fixed(w1_min, W_FRACT_BITS);
+                color_thrust.w2_min = to_fixed(w2_min, W_FRACT_BITS);
+
+                let w0_min = w0_min / scaled_area;
+                let w1_min = w1_min / scaled_area;
+                let w2_min = w2_min / scaled_area;
+
+                let w_inverse_min = 1.0 / verts[0].position.w() * w0_min + 1.0 / verts[1].position.w() * w1_min + 1.0 / verts[2].position.w() * w2_min;
+                color_thrust.w_inverse_min = to_fixed(w_inverse_min, W_INVERSE_FRACT_BITS);
+
+                let z_min = window_verts[0].z() * w0_min + window_verts[1].z() * w1_min + window_verts[2].z() * w2_min;
+                color_thrust.z_min = to_fixed(z_min, Z_FRACT_BITS);
+
+                let s_min = verts[0].tex_coord.x() * w0_min + verts[1].tex_coord.x() * w1_min + verts[2].tex_coord.x() * w2_min;
+                let t_min = verts[0].tex_coord.y() * w0_min + verts[1].tex_coord.y() * w1_min + verts[2].tex_coord.y() * w2_min;
+                color_thrust.s_min = to_fixed(s_min, ST_FRACT_BITS);
+                color_thrust.t_min = to_fixed(t_min, ST_FRACT_BITS);
+
+                color_thrust.rasterize_primitive();
+
+                // Copy rasterizer memory back to tile
+                for y in 0..TILE_DIM {
+                    for x in 0..TILE_DIM {
+                        let buffer_index = (HEIGHT - 1 - (tile_min_y as usize + y)) * WIDTH + tile_min_x as usize + x;
+                        let tile_buffer_index = y * TILE_DIM + x;
+                        self.back_buffer[buffer_index] = color_thrust.color_buffer0[tile_buffer_index];
+                        self.depth_buffer[buffer_index] = color_thrust.depth_buffer0[tile_buffer_index];
+                    }
+                }
+            }
         }
     }
 
@@ -1301,7 +1232,7 @@ impl Context {
             }
         }
 
-        while width > 128 || height > 128 {
+        while width > MAX_TEXTURE_DIM as u32 || height > MAX_TEXTURE_DIM as u32 {
             let scaled_width = width / 2;
             let scaled_height = height / 2;
 
