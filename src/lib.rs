@@ -655,6 +655,8 @@ impl Context {
         color_thrust.s_dy = to_fixed(s_dy, ST_FRACT_BITS);
         color_thrust.t_dy = to_fixed(t_dy, ST_FRACT_BITS);
 
+        color_thrust.color = verts[0].color;
+
         for tile_index_y in 0..HEIGHT / TILE_DIM {
             let tile_min_y = (tile_index_y * TILE_DIM) as i32;
             let tile_max_y = tile_min_y + TILE_DIM as i32 - 1;

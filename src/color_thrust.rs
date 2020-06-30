@@ -63,6 +63,8 @@ pub struct ColorThrust {
 
     pub blend_src_factor: BlendSrcFactor,
     pub blend_dst_factor: BlendDstFactor,
+
+    pub color: Vec4,
 }
 
 impl ColorThrust {
@@ -102,6 +104,8 @@ impl ColorThrust {
 
             blend_src_factor: BlendSrcFactor::One,
             blend_dst_factor: BlendDstFactor::Zero,
+
+            color: Vec4::zero(),
         }
     }
 
@@ -159,7 +163,7 @@ impl ColorThrust {
                     let texel_blue = (a_blue * one_minus_t_fract + b_blue * t_fract) >> ST_FILTER_BITS;
                     let texel_alpha = (a_alpha * one_minus_t_fract + b_alpha * t_fract) >> ST_FILTER_BITS;
                     // TODO: Use properly interpolated vertex color
-                    let src_color = /*verts[0].color * 255.0 * */Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32);// / 256.0;
+                    let src_color = self.color * 255.0 * Vec4::new(texel_red as f32, texel_green as f32, texel_blue as f32, texel_alpha as f32) / 256.0;
 
                     let src_scale_factors = match self.blend_src_factor {
                         BlendSrcFactor::Zero => Vec4::zero(),
