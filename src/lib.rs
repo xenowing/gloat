@@ -539,7 +539,7 @@ impl Context {
             let texture = &self.textures[self.texture_2d as usize];
             Vec2::new(texture.width as f32, texture.height as f32)
         } else {
-            Vec2::splat(2.0)
+            Vec2::zero()
         };
         let st_bias = -0.5; // Offset to sample texel centers
         for i in 0..verts.len() {
