@@ -676,8 +676,8 @@ impl Context {
                     for x in 0..TILE_DIM {
                         let buffer_index = (HEIGHT - 1 - (tile_min_y as usize + y)) * WIDTH + tile_min_x as usize + x;
                         let tile_buffer_index = y * TILE_DIM + x;
-                        color_thrust.color_buffer0[tile_buffer_index] = self.back_buffer[buffer_index];
-                        color_thrust.depth_buffer0[tile_buffer_index] = self.depth_buffer[buffer_index];
+                        color_thrust.color_buffer[tile_buffer_index] = self.back_buffer[buffer_index];
+                        color_thrust.depth_buffer[tile_buffer_index] = self.depth_buffer[buffer_index];
                     }
                 }
 
@@ -713,8 +713,8 @@ impl Context {
                     for x in 0..TILE_DIM {
                         let buffer_index = (HEIGHT - 1 - (tile_min_y as usize + y)) * WIDTH + tile_min_x as usize + x;
                         let tile_buffer_index = y * TILE_DIM + x;
-                        self.back_buffer[buffer_index] = color_thrust.color_buffer0[tile_buffer_index];
-                        self.depth_buffer[buffer_index] = color_thrust.depth_buffer0[tile_buffer_index];
+                        self.back_buffer[buffer_index] = color_thrust.color_buffer[tile_buffer_index];
+                        self.depth_buffer[buffer_index] = color_thrust.depth_buffer[tile_buffer_index];
                     }
                 }
             }

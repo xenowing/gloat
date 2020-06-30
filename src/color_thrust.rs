@@ -28,11 +28,8 @@ pub const Z_FRACT_BITS: u32 = 30; // Must be greater than 16
 pub const ST_FRACT_BITS: u32 = 24;
 
 pub struct ColorThrust {
-    // TODO: Use extra buffers to implement ping-pong scheme between primitives
-    pub color_buffer0: [u32; TILE_PIXELS],
-    pub color_buffer1: [u32; TILE_PIXELS],
-    pub depth_buffer0: [u16; TILE_PIXELS],
-    pub depth_buffer1: [u16; TILE_PIXELS],
+    pub color_buffer: [u32; TILE_PIXELS],
+    pub depth_buffer: [u16; TILE_PIXELS],
 
     // TODO: Split into four buffers for simultaneous reads for filtering
     pub texture_buffer: [u32; MAX_TEXTURE_PIXELS],
@@ -71,10 +68,8 @@ pub struct ColorThrust {
 impl ColorThrust {
     pub fn new() -> ColorThrust {
         ColorThrust {
-            color_buffer0: [0; TILE_PIXELS],
-            color_buffer1: [0; TILE_PIXELS],
-            depth_buffer0: [0; TILE_PIXELS],
-            depth_buffer1: [0; TILE_PIXELS],
+            color_buffer: [0; TILE_PIXELS],
+            depth_buffer: [0; TILE_PIXELS],
 
             texture_buffer: [0; MAX_TEXTURE_PIXELS],
             texture_width_shift: 0,
@@ -119,7 +114,7 @@ impl ColorThrust {
         let mut s_row = self.s_min;
         let mut t_row = self.t_min;
 
-        // TODO: Clip to viewport bounds within tile 
+        // TODO: Clip to viewport bounds within tile
         for y in 0..TILE_DIM {
             let mut w0 = w0_row;
             let mut w1 = w1_row;
@@ -133,7 +128,7 @@ impl ColorThrust {
                 if (w0 | w1 | w2) >= 0 {
                     let z = (z >> (Z_FRACT_BITS - 16)) as u16;
                     let buffer_index = y as usize * TILE_DIM + x as usize;
-                    let depth_test_result = !self.depth_test_enable || z < self.depth_buffer0[buffer_index];
+                    let depth_test_result = !self.depth_test_enable || z < self.depth_buffer[buffer_index];
                     const W_FRACT_BITS: u32 = 8; // Must be less than W_INVERSE_FRACT_BITS and ST_FRACT_BITS
                     let one = 1 << W_INVERSE_FRACT_BITS;
                     let w = (one << W_INVERSE_FRACT_BITS) / (w_inverse as i64);
@@ -173,7 +168,7 @@ impl ColorThrust {
                         BlendSrcFactor::SrcAlpha => Vec4::splat(src_color.w()),
                     };
 
-                    let dst_color = self.color_buffer0[buffer_index];
+                    let dst_color = self.color_buffer[buffer_index];
                     let dst_red = (dst_color >> 16) & 0xff;
                     let dst_green = (dst_color >> 8) & 0xff;
                     let dst_blue = (dst_color >> 0) & 0xff;
@@ -194,13 +189,13 @@ impl ColorThrust {
                     let color_blue = color.z().floor() as u32;
                     let color_alpha = color.w().floor() as u32;
                     if depth_test_result {
-                        self.color_buffer0[buffer_index] = (color_alpha << 24) | (color_red << 16) | (color_green << 8) | (color_blue << 0);
+                        self.color_buffer[buffer_index] = (color_alpha << 24) | (color_red << 16) | (color_green << 8) | (color_blue << 0);
                     }
 
-                    self.depth_buffer0[buffer_index] = if depth_test_result && self.depth_mask_enable {
+                    self.depth_buffer[buffer_index] = if depth_test_result && self.depth_mask_enable {
                         z
                     } else {
-                        self.depth_buffer0[buffer_index]
+                        self.depth_buffer[buffer_index]
                     };
                 }
 
