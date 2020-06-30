@@ -584,6 +584,10 @@ impl Context {
         }
 
         // TODO: This only needs to happen once per drawcall, not once per primitive
+        color_thrust.depth_test_enable = self.depth_test;
+        color_thrust.depth_mask_enable = self.depth_mask;
+
+        // TODO: This only needs to happen once per drawcall, not once per primitive
         if self.blend_enable {
             color_thrust.blend_src_factor = self.blend_src_factor;
             color_thrust.blend_dst_factor = self.blend_dst_factor;
