@@ -133,12 +133,36 @@ impl ColorThrust {
                     let z = (z >> (Z_FRACT_BITS - 16)) as u16;
                     let buffer_index = y as usize * TILE_DIM + x as usize;
                     let depth_test_result = !self.depth_test_enable || z < self.depth_buffer[buffer_index];
-                    const W_FRACT_BITS: u32 = 8; // Must be less than W_INVERSE_FRACT_BITS and ST_FRACT_BITS
-                    let one = 1 << W_INVERSE_FRACT_BITS;
-                    let w = (one << W_INVERSE_FRACT_BITS) / (w_inverse as i64);
-                    let w = (w >> (W_INVERSE_FRACT_BITS - W_FRACT_BITS)) as i32;
-                    let s = ((s >> W_FRACT_BITS) * w) as u32;
-                    let t = ((t >> W_FRACT_BITS) * w) as u32;
+                    const RESTORED_W_FRACT_BITS: u32 = 8; // Must be less than W_INVERSE_FRACT_BITS and ST_FRACT_BITS
+
+                    fn inverse_approx(x: u32) -> u32 {
+                        let shl = x.leading_zeros() & 31;
+                        let normalized_x = x << shl;
+                        // TODO: Why is 3 the magic number here? Is that dependent on the other constants? Can we determine shr a better way?
+                        let shr = (64 - 2 * (W_INVERSE_FRACT_BITS - RESTORED_W_FRACT_BITS - 3) - shl) & 31;
+
+                        let mut e = !normalized_x; // 2's complement approximation
+                        let mut q = e;
+                        for _ in 0..4 { // TODO: Is this the correct number of steps?
+                            q += ((((q as u64) * (e as u64)) >> 32) as u32);
+                            e = (((e as u64) * (e as u64)) >> 32) as u32;
+                        }
+
+                        return (q >> shr) | (1 << (32 - shr));
+                    }
+                    let w_approx = inverse_approx(w_inverse as _) as i32;
+
+                    /*if x == 0 && y == 0 {
+                        /*let one = 1 << W_INVERSE_FRACT_BITS;
+                        let w = (one << W_INVERSE_FRACT_BITS) / (w_inverse as i64);
+                        let w = (w >> (W_INVERSE_FRACT_BITS - RESTORED_W_FRACT_BITS)) as i32;*/
+                        println!("***** w_inverse: 0x{:08x}, w: 0x{:08x}, w_approx: 0x{:08x}, error: {}", w_inverse, w, w_approx, (w_approx as i32) - (w as i32));
+                    }*/
+
+                    let w = w_approx;
+
+                    let s = ((s >> RESTORED_W_FRACT_BITS) * w) as u32;
+                    let t = ((t >> RESTORED_W_FRACT_BITS) * w) as u32;
                     let s_floor = s >> ST_FRACT_BITS;
                     let t_floor = t >> ST_FRACT_BITS;
                     const ST_FILTER_BITS: u32 = 4; // Must be less than ST_FRACT_BITS
